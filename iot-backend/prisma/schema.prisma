@@ -1,0 +1,38 @@
+// IoT Temperature Monitoring - PostgreSQL (Prisma)
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  imei      String    @id
+  name      String?
+  apiKey    String    @unique @default(uuid())
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  readings Reading[]
+
+  @@map("devices")
+}
+
+model Reading {
+  id          Int      @id @default(autoincrement())
+  temperature Float
+  humidity    Float?
+  voltage     Float?
+  packetIndex Int?
+  timestamp   DateTime @default(now())
+  deviceImei  String
+
+  device Device @relation(fields: [deviceImei], references: [imei], onDelete: Cascade)
+
+  @@index([deviceImei, timestamp(sort: Desc)])
+  @@map("readings")
+}

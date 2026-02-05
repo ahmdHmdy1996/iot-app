@@ -1,0 +1,21 @@
+# Vite
+dist/
+dist-ssr/
+*.local
+
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
