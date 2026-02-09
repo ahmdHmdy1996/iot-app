@@ -107,24 +107,18 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<MainLayout />}>
+          {/* All dashboard routes require authentication */}
+          <Route
+            path="/"
+            element={
+              <PrivateRoute>
+                <MainLayout />
+              </PrivateRoute>
+            }
+          >
             <Route index element={<LiveMonitor />} />
-            <Route
-              path="devices"
-              element={
-                <PrivateRoute>
-                  <Devices />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="history"
-              element={
-                <PrivateRoute>
-                  <History />
-                </PrivateRoute>
-              }
-            />
+            <Route path="devices" element={<Devices />} />
+            <Route path="history" element={<History />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

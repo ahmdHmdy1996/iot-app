@@ -18,18 +18,28 @@ const Login = () => {
   const onFinish = async (values) => {
     setLoading(true);
     try {
+      console.log("[Login Debug] Attempting login for:", values.username);
       const res = await apiService.login({
         username: values.username,
         password: values.password,
       });
+      console.log("[Login Debug] Response:", res);
       if (res?.success && res?.token) {
+        console.log("[Login Debug] Token received, length:", res.token.length);
         localStorage.setItem(AUTH_TOKEN_KEY, res.token);
+        // Store user info for context
+        localStorage.setItem(
+          "user",
+          JSON.stringify({ username: values.username }),
+        );
         message.success("تم تسجيل الدخول بنجاح");
-        navigate("/devices", { replace: true });
+        navigate("/", { replace: true });
       } else {
+        console.error("[Login Debug] No token in response:", res);
         message.error("فشل تسجيل الدخول");
       }
     } catch (err) {
+      console.error("[Login Debug] Error:", err);
       message.error(err?.message || "فشل تسجيل الدخول");
     } finally {
       setLoading(false);

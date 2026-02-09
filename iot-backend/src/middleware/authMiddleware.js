@@ -17,7 +17,16 @@ export function authMiddleware(req, res, next) {
     });
   }
 
+  // DEBUG: Log incoming auth header
+  console.log(
+    "[Auth Debug] Authorization header:",
+    authHeader ? `Bearer ${authHeader.slice(7, 20)}...` : "MISSING",
+  );
+
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log(
+      "[Auth Debug] FAILED: Missing or malformed Authorization header",
+    );
     return res.status(401).json({
       success: false,
       message: "غير مصرح. يرجى تسجيل الدخول.",
@@ -25,11 +34,15 @@ export function authMiddleware(req, res, next) {
   }
 
   const token = authHeader.slice(7);
+  console.log("[Auth Debug] Token extracted, length:", token.length);
 
   try {
-    jwt.verify(token, jwtSecret);
+    const decoded = jwt.verify(token, jwtSecret);
+    console.log("[Auth Debug] SUCCESS: Token verified, payload:", decoded);
+    req.user = decoded; // Attach decoded payload to request
     next();
   } catch (err) {
+    console.log("[Auth Debug] FAILED: JWT verification error:", err.message);
     return res.status(401).json({
       success: false,
       message: "انتهت الجلسة أو الرمز غير صالح. يرجى تسجيل الدخول مرة أخرى.",

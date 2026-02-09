@@ -11,8 +11,16 @@ dotenv.config();
 
 const app = express();
 
+// CORS Configuration - Allow all origins for development
+const corsOptions = {
+  origin: true, // Reflect the request origin (works with credentials)
+  credentials: true, // Allow cookies/authorization headers
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
