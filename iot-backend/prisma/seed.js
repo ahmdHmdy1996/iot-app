@@ -9,24 +9,29 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-/**
- * Simple password hashing using Node.js crypto (no external deps needed)
- * For production, consider using bcrypt or argon2
- */
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto
-    .pbkdf2Sync(password, salt, 1000, 64, "sha512")
-    .toString("hex");
-  return `${salt}:${hash}`;
-}
-
 async function main() {
   console.log("🌱 Seeding database...");
+
+  // Seed Admin User
+  const adminUsername = "admin";
+  const adminPassword = "123456"; // Default password
+  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+
+  const adminUser = await prisma.user.upsert({
+    where: { username: adminUsername },
+    update: {}, // Don't update if exists
+    create: {
+      username: adminUsername,
+      password: hashedPassword,
+      role: "admin",
+    },
+  });
+
+  console.log(`✅ Admin user verified: ${adminUser.username}`);
 
   // Seed some test devices
   const devices = [
@@ -52,11 +57,6 @@ async function main() {
   }
 
   console.log("✅ Seeding complete!");
-  console.log("");
-  console.log("📝 Admin credentials are managed via .env file:");
-  console.log("   ADMIN_USERNAME=admin");
-  console.log("   ADMIN_PASSWORD=diboo22");
-  console.log("   JWT_SECRET=your-long-random-jwt-secret");
 }
 
 main()
