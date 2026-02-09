@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # خدمة قاعدة البيانات
+  # 1. خدمة قاعدة البيانات
   postgres:
     image: postgres:15-alpine
     container_name: iot_db_prod
@@ -12,24 +12,45 @@ services:
       POSTGRES_DB: iot_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - iot-network
 
-  # خدمة الباكند
+  # 2. خدمة الباك إند
   backend:
     build: ./iot-backend
     container_name: iot_backend_prod
     restart: always
     ports:
-      - "3005:3000" # API Port
+      - "3005:3000" # API Port (Host:Container)
       - "8899:8899" # TCP Port for Sensors
     environment:
+      # لاحظ: استخدمنا كلمة 'postgres' كاسم للهوست لأن الدوكر بيفهم اسم الخدمة
       DATABASE_URL: "postgresql://myuser:mysecurepassword@postgres:5432/iot_db?schema=public"
       PORT: 3000
       TCP_PORT: 8899
       ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: diboo22 
+      ADMIN_PASSWORD: diboo22
       JWT_SECRET: super_long_random_secret_key_change_this
     depends_on:
       - postgres
+    networks:
+      - iot-network
+
+  # 3. خدمة الفرونت إند (الداشبورد)
+  frontend:
+    build: ./iot-dashboard
+    container_name: iot_dashboard_prod
+    restart: always
+    ports:
+      - "8090:80" # هيفتح على بورت 8090 عشان ميتعارضش مع الموقع القديم
+    depends_on:
+      - backend
+    networks:
+      - iot-network
 
 volumes:
   postgres_data:
+
+networks:
+  iot-network:
+    driver: bridge
