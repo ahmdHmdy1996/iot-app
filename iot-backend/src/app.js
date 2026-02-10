@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import adminRoutes from "./routes/admin.js";
 import apiRoutes from "./routes/api.js";
 import authRoutes from "./routes/auth.js";
-import { authMiddleware } from "./middleware/authMiddleware.js";
+import externalRoutes from "./routes/external.js"; // New External Routes
 
 // Load environment variables
 dotenv.config();
@@ -24,8 +24,9 @@ app.use((req, res, next) => {
 
 // Routes
 app.use("/auth", authRoutes);
-app.use("/admin", authMiddleware, adminRoutes);
-app.use("/api", apiRoutes);
+app.use("/admin", adminRoutes); // Middleware is applied inside the router file
+app.use("/api/external", externalRoutes); // New external API path
+app.use("/api", apiRoutes); // User API (protected by JWT inside router)
 
 // Health check endpoint
 app.get("/health", (req, res) => {

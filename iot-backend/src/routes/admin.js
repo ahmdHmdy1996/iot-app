@@ -1,146 +1,177 @@
 import express from "express";
-import { v4 as uuidv4 } from "uuid";
+import bcrypt from "bcryptjs";
 import prisma from "../prisma.js";
+import { authMiddleware, authorizeRole } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+// Protect all admin routes
+router.use(authMiddleware);
+router.use(authorizeRole(["ADMIN"]));
+
+/**
+ * POST /admin/users
+ * Create a new user (Admin or Client)
+ */
+router.post("/users", async (req, res) => {
+  try {
+    const { username, password, role = "CLIENT" } = req.body;
+
+    if (!username || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Username and password required" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = await prisma.user.create({
+      data: {
+        username,
+        password: hashedPassword,
+        role,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "User created successfully",
+      user: { id: newUser.id, username: newUser.username, role: newUser.role },
+    });
+  } catch (error) {
+    console.error("Error creating user:", error);
+    if (error.code === "P2002") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Username already exists" });
+    }
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 /**
  * POST /admin/devices
- * Create a new device and generate API key
- * Body: { imei, name }
+ * Create a new device (Inventory)
  */
 router.post("/devices", async (req, res) => {
   try {
     const { imei, name } = req.body;
 
-    // Validate input
     if (!imei) {
-      return res.status(400).json({
-        success: false,
-        message: "IMEI is required.",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "IMEI is required" });
     }
 
-    // Check if device already exists
-    const existingDevice = await prisma.device.findUnique({
-      where: { imei },
-    });
-    if (existingDevice) {
-      return res.status(409).json({
-        success: false,
-        message: "Device with this IMEI already exists.",
-        device: {
-          imei: existingDevice.imei,
-          name: existingDevice.name,
-          apiKey: existingDevice.apiKey,
-        },
-      });
-    }
-
-    // Generate unique API key
-    const apiKey = uuidv4();
-
-    // Create new device
-    const device = await prisma.device.create({
+    const newDevice = await prisma.device.create({
       data: {
         imei,
-        name: name || `Device ${imei.substring(0, 8)}`,
-        apiKey,
+        name,
         isActive: true,
       },
     });
 
-    res.status(201).json({
+    res.json({
       success: true,
-      message: "Device created successfully.",
-      device: {
-        imei: device.imei,
-        name: device.name,
-        apiKey: device.apiKey,
-        isActive: device.isActive,
-        createdAt: device.createdAt,
-      },
+      message: "Device added to inventory",
+      device: newDevice,
     });
   } catch (error) {
     console.error("Error creating device:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error.",
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        success: false,
+        message: "Device with this IMEI already exists",
+      });
+    }
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/**
+ * POST /admin/devices/assign
+ * Assign a device to a user
+ */
+router.post("/devices/assign", async (req, res) => {
+  try {
+    const { imei, userId } = req.body;
+
+    if (!imei || !userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "IMEI and UserID required" });
+    }
+
+    // Verify user exists first (optional, Prisma will throw FK error but this is cleaner)
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) },
     });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const updatedDevice = await prisma.device.update({
+      where: { imei },
+      data: {
+        userId: Number(userId),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Device ${imei} assigned to user ${user.username}`,
+      device: updatedDevice,
+    });
+  } catch (error) {
+    console.error("Error assigning device:", error);
+    if (error.code === "P2025") {
+      return res
+        .status(404)
+        .json({ success: false, message: "Device not found" });
+    }
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
 /**
  * GET /admin/devices
- * List all devices
+ * List all devices (Inventory)
  */
 router.get("/devices", async (req, res) => {
   try {
     const devices = await prisma.device.findMany({
+      include: {
+        user: {
+          select: { username: true },
+        },
+        readings: {
+          orderBy: { timestamp: "desc" },
+          take: 1,
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 
-    res.json({
-      success: true,
-      count: devices.length,
-      devices: devices.map((d) => ({
-        imei: d.imei,
-        name: d.name,
-        apiKey: d.apiKey,
-        isActive: d.isActive,
-        createdAt: d.createdAt,
-      })),
-    });
-  } catch (error) {
-    console.error("Error fetching devices:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error.",
-    });
-  }
-});
-
-/**
- * PATCH /admin/devices/:imei/status
- * Toggle device active status
- */
-router.patch("/devices/:imei/status", async (req, res) => {
-  try {
-    const { imei } = req.params;
-    const { isActive } = req.body;
-
-    const existing = await prisma.device.findUnique({
-      where: { imei },
-    });
-
-    if (!existing) {
-      return res.status(404).json({
-        success: false,
-        message: "Device not found.",
-      });
-    }
-
-    const newActive = isActive !== undefined ? isActive : !existing.isActive;
-    const device = await prisma.device.update({
-      where: { imei },
-      data: { isActive: newActive },
-    });
+    // Format response to match what frontend expects roughly
+    // Frontend expects: { success, data: [...] }
+    const formattedDevices = devices.map((d) => ({
+      imei: d.imei,
+      name: d.name,
+      isActive: d.isActive,
+      assignedTo: d.user?.username || "Unassigned",
+      lastOnline: d.readings[0]?.timestamp || null,
+      latestTemp: d.readings[0]?.temperature || null,
+    }));
 
     res.json({
       success: true,
-      message: "Device status updated.",
-      device: {
-        imei: device.imei,
-        name: device.name,
-        isActive: device.isActive,
-      },
+      data: formattedDevices,
     });
   } catch (error) {
-    console.error("Error updating device status:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error.",
-    });
+    console.error("Error fetching all devices:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 

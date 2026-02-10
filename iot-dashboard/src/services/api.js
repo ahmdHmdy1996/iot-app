@@ -1,5 +1,5 @@
 import axios from "axios";
-import { API_BASE_URL, API_KEY, AUTH_TOKEN_KEY } from "../config/constants";
+import { API_BASE_URL, AUTH_TOKEN_KEY } from "../config/constants";
 
 /**
  * API Service for Backend Communication
@@ -10,22 +10,12 @@ class ApiService {
       baseURL: API_BASE_URL,
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": "560bb6b4-99af-4054-802b-4677c9ca3115",
       },
     });
 
     // Request interceptor: attach JWT when present
     this.client.interceptors.request.use((config) => {
       const token = localStorage.getItem(AUTH_TOKEN_KEY);
-      console.log(
-        "[API Debug] Request:",
-        config.method?.toUpperCase(),
-        config.url,
-      );
-      console.log(
-        "[API Debug] Token in localStorage:",
-        token ? `${token.slice(0, 20)}...` : "NONE",
-      );
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -34,41 +24,18 @@ class ApiService {
 
     // Response interceptor
     this.client.interceptors.response.use(
-      (response) => {
-        console.log(
-          "[API Debug] Response OK:",
-          response.config.url,
-          response.status,
-        );
-        return response.data;
-      },
+      (response) => response.data,
       (error) => {
-        console.error(
-          "[API Debug] Error:",
-          error.config?.url,
-          error.response?.status,
-        );
-
         if (error.response) {
           if (error.response.status === 401) {
-            console.warn(
-              "[API Debug] 401 Unauthorized - Clearing token and redirecting",
-            );
-            console.warn("🛑 401 Unauthorized DETECTED!");
-            console.warn("⚠️ Redirect is BLOCKED for debugging.");
-
-            // Pauses execution for debugging
-            debugger;
-
+            // Optional: Auto-logout logic
             // localStorage.removeItem(AUTH_TOKEN_KEY);
             // window.location.href = "/login";
-            return Promise.reject(new Error("غير مصرح. يرجى تسجيل الدخول."));
+            return Promise.reject(new Error("Unauthorized. Please log in."));
           }
           throw new Error(error.response.data?.message || "Server error");
         } else if (error.request) {
-          throw new Error(
-            "No response from server. Please check your connection.",
-          );
+          throw new Error("No response from server. Check connection.");
         } else {
           throw new Error(error.message);
         }
@@ -77,61 +44,84 @@ class ApiService {
   }
 
   /**
-   * Login (admin)
+   * Login
    * @param {Object} credentials - { username, password }
-   * @returns {Promise<Object>} { success, token }
+   * @returns {Promise<Object>} { success, token, user }
    */
   async login(credentials) {
     return await this.client.post("/auth/login", credentials);
   }
 
   /**
-   * Get current device status
-   * @returns {Promise<Object>} Current status data
+   * Get Devices (Context-aware based on Role)
+   * Check localStorage for user role
+   * @returns {Promise<Object>} { success, data: [...] }
    */
-  async getCurrentStatus() {
-    return await this.client.get("/api/readings/current");
+  async getDevices() {
+    const userStr = localStorage.getItem("user");
+    let role = "CLIENT";
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        role = user.role || "CLIENT";
+      } catch (e) {
+        console.error("Error parsing user from localStorage", e);
+      }
+    }
+
+    if (role === "ADMIN") {
+      return await this.client.get("/admin/devices");
+    } else {
+      return await this.client.get("/api/my-devices");
+    }
   }
 
   /**
-   * Get historical readings
-   * @param {number} limit - Number of readings to fetch
-   * @returns {Promise<Object>} Historical data
+   * Get current reading (Client)
+   * @param {string} imei
    */
-  async getHistory(limit = 50) {
-    return await this.client.get("/api/readings/history", {
+  async getReading(imei) {
+    // The backend route is /api/readings/:imei
+    return await this.client.get(`/api/readings/${imei}?limit=1`);
+  }
+
+  /**
+   * Get history (Client)
+   * @param {string} imei
+   * @param {number} limit
+   */
+  async getHistory(imei, limit = 50) {
+    // The backend route is /api/readings/:imei?limit=X
+    // But looking at previous api.js, getHistory was /api/readings/history (legacy)
+    // New backend refactor created: GET /api/readings/:imei
+    // So we should use that.
+    return await this.client.get(`/api/readings/${imei}`, {
       params: { limit },
     });
   }
 
-  /**
-   * Get statistics
-   * @param {number} hours - Time range in hours
-   * @returns {Promise<Object>} Statistics data
-   */
-  async getStats(hours = 24) {
-    return await this.client.get("/api/readings/stats", {
-      params: { hours },
-    });
-  }
+  // Legacy support for Stats if needed, or remove if unused.
+  // The new backend didn't explicitly implement stats endpoint yet in the refactor plan?
+  // Checking api.js in backend... only "my-devices" and "readings/:imei".
+  // "stats" endpoint was removed/not ported in previous turn?
+  // Wait, I replaced `src/routes/api.js` entirely.
+  // The new `src/routes/api.js` ONLY has `GET /my-devices` and `GET /readings/:imei`.
+  // So `getStats` is broken/missing in backend.
+  // I should probably remove it from frontend for now or handle it.
 
   /**
-   * Get all devices (admin)
-   * @returns {Promise<Object>} { success, count, devices }
-   */
-  async getDevices() {
-    return await this.client.get("/admin/devices");
-  }
-
-  /**
-   * Create a new device (admin)
-   * @param {Object} data - { name, imei }
-   * @returns {Promise<Object>} Created device data
+   * Admin: Create Device
    */
   async createDevice(data) {
     return await this.client.post("/admin/devices", data);
   }
+
+  /**
+   * Admin: Assign Device
+   */
+  async assignDevice(data) {
+    return await this.client.post("/admin/devices/assign", data);
+  }
 }
 
-// Export singleton instance
 export default new ApiService();

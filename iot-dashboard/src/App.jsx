@@ -26,20 +26,12 @@ import "./App.css";
 
 const { Header, Sider, Content } = Layout;
 
-const menuItems = [
-  { key: "/", icon: <DashboardOutlined />, label: "المراقبة الحية" },
-  { key: "/history", icon: <HistoryOutlined />, label: "السجل والتحليلات" },
-  { key: "/devices", icon: <DesktopOutlined />, label: "إدارة الأجهزة" },
-];
+import Sidebar from "./components/Sidebar";
 
 /**
  * Layout with Header + Sidebar + Outlet (for main app routes)
  */
 function MainLayout() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const currentPath = location.pathname;
-
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Header
@@ -65,20 +57,7 @@ function MainLayout() {
         </div>
       </Header>
       <Layout>
-        <Sider
-          width={250}
-          style={{ background: "#fff" }}
-          breakpoint="lg"
-          collapsedWidth="0"
-        >
-          <Menu
-            mode="inline"
-            selectedKeys={[currentPath]}
-            items={menuItems}
-            onClick={({ key }) => navigate(key)}
-            style={{ height: "100%", borderLeft: 0 }}
-          />
-        </Sider>
+        <Sidebar />
         <Layout style={{ padding: 0 }}>
           <Content>
             <Outlet />

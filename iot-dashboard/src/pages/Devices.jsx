@@ -14,7 +14,11 @@ import {
   message,
   Space,
 } from "antd";
-import { PlusOutlined, CopyOutlined } from "@ant-design/icons";
+import {
+  PlusOutlined,
+  UserAddOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import apiService from "../services/api";
 
 const { Content } = Layout;
@@ -22,26 +26,49 @@ const { Title } = Typography;
 
 /**
  * Devices Page
- * Device management: list devices and add new ones
+ * - Admin: View all, Add New, Assign User
+ * - Client: View my devices
  */
 const Devices = () => {
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+
+  // Modal States
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
+
   const [form] = Form.useForm();
+  const [assignForm] = Form.useForm();
+
+  // Get User Role
+  const userStr = localStorage.getItem("user");
+  let role = "CLIENT";
+  if (userStr) {
+    try {
+      const u = JSON.parse(userStr);
+      role = u.role || "CLIENT";
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  const isAdmin = role === "ADMIN";
 
   /**
    * Fetch devices list
    */
   const fetchDevices = async () => {
     try {
+      setLoading(true);
       setError(null);
       const response = await apiService.getDevices();
-      setDevices(response.devices || []);
+      // Backend returns { success: true, data: [...] }
+      setDevices(response.data || []);
     } catch (err) {
       console.error("Error fetching devices:", err);
+      // Backend might return 404/500
       setError(err.message || "فشل في جلب قائمة الأجهزة");
       setDevices([]);
     } finally {
@@ -54,19 +81,9 @@ const Devices = () => {
   }, []);
 
   /**
-   * Copy API key to clipboard
+   * Admin: Add Device
    */
-  const copyApiKey = (apiKey) => {
-    navigator.clipboard
-      .writeText(apiKey)
-      .then(() => message.success("تم نسخ مفتاح API"))
-      .catch(() => message.error("فشل في النسخ"));
-  };
-
-  /**
-   * Submit add device form
-   */
-  const handleSubmit = async (values) => {
+  const handleAddDevice = async (values) => {
     try {
       setSubmitLoading(true);
       await apiService.createDevice({
@@ -74,11 +91,32 @@ const Devices = () => {
         imei: values.imei?.trim(),
       });
       message.success("تم إضافة الجهاز بنجاح");
-      setModalOpen(false);
+      setAddModalOpen(false);
       form.resetFields();
       await fetchDevices();
     } catch (err) {
       message.error(err.message || "فشل في إضافة الجهاز");
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  /**
+   * Admin: Assign Device
+   */
+  const handleAssignDevice = async (values) => {
+    try {
+      setSubmitLoading(true);
+      await apiService.assignDevice({
+        imei: values.imei,
+        userId: values.userId,
+      });
+      message.success("تم تخصيص الجهاز للمستخدم بنجاح");
+      setAssignModalOpen(false);
+      assignForm.resetFields();
+      await fetchDevices();
+    } catch (err) {
+      message.error(err.message || "فشل في تخصيص الجهاز");
     } finally {
       setSubmitLoading(false);
     }
@@ -89,30 +127,24 @@ const Devices = () => {
       title: "اسم الجهاز",
       dataIndex: "name",
       key: "name",
-      render: (name) => name || "—",
+      render: (name) => <span style={{ fontWeight: 500 }}>{name || "—"}</span>,
     },
     {
       title: "IMEI",
       dataIndex: "imei",
       key: "imei",
-      render: (imei) => <Tag color="blue">{imei}</Tag>,
+      render: (imei) => <Tag color="geekblue">{imei}</Tag>,
     },
     {
-      title: "مفتاح API",
-      dataIndex: "apiKey",
-      key: "apiKey",
-      render: (apiKey) => (
-        <Space>
-          <span>{apiKey ? `${apiKey.substring(0, 8)}...` : "—"}</span>
-          <Button
-            type="text"
-            size="small"
-            icon={<CopyOutlined />}
-            onClick={() => copyApiKey(apiKey)}
-            title="نسخ المفتاح"
-          />
-        </Space>
-      ),
+      title: "آخر اتصال",
+      dataIndex: "lastOnline",
+      key: "lastOnline",
+      render: (date) =>
+        date ? (
+          new Date(date).toLocaleString("ar-EG")
+        ) : (
+          <span style={{ color: "#999" }}>لم يتصل بعد</span>
+        ),
     },
     {
       title: "الحالة",
@@ -127,29 +159,19 @@ const Devices = () => {
     },
   ];
 
-  if (loading && devices.length === 0) {
-    return (
-      <Layout style={{ minHeight: "100vh", padding: 24 }}>
-        <Content style={{ textAlign: "center", paddingTop: 100 }}>
-          <Spin size="large" tip="جاري تحميل البيانات..." />
-        </Content>
-      </Layout>
-    );
-  }
-
-  if (error && devices.length === 0) {
-    return (
-      <Layout style={{ minHeight: "100vh", padding: 24 }}>
-        <Content>
-          <Alert
-            message="خطأ في الاتصال"
-            description={error}
-            type="error"
-            showIcon
-          />
-        </Content>
-      </Layout>
-    );
+  // Admin Columns
+  if (isAdmin) {
+    columns.push({
+      title: "المستخدم المخصص",
+      dataIndex: "assignedTo",
+      key: "assignedTo",
+      render: (user) =>
+        user ? (
+          <Tag color="purple">{user}</Tag>
+        ) : (
+          <Tag color="default">غير مخصص</Tag>
+        ),
+    });
   }
 
   return (
@@ -164,20 +186,40 @@ const Devices = () => {
             }}
           >
             <Title level={2} style={{ margin: 0 }}>
-              إدارة الأجهزة
+              {isAdmin ? "إدارة المخزون والأجهزة" : "أجهزتي"}
             </Title>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setModalOpen(true)}
-            >
-              إضافة جهاز
-            </Button>
+            <Space>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={fetchDevices}
+                loading={loading}
+              >
+                تحديث
+              </Button>
+              {isAdmin && (
+                <>
+                  <Button
+                    type="dashed"
+                    icon={<UserAddOutlined />}
+                    onClick={() => setAssignModalOpen(true)}
+                  >
+                    تخصيص مستخدم
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => setAddModalOpen(true)}
+                  >
+                    إضافة جهاز
+                  </Button>
+                </>
+              )}
+            </Space>
           </div>
 
           {error && (
             <Alert
-              message="تحذير"
+              message="تنبيه"
               description={error}
               type="warning"
               showIcon
@@ -185,64 +227,79 @@ const Devices = () => {
             />
           )}
 
-          <Card title={`قائمة الأجهزة (${devices.length})`}>
+          <Card>
             <Table
               columns={columns}
               dataSource={devices}
               rowKey="imei"
               loading={loading}
               pagination={{ pageSize: 10 }}
+              locale={{ emptyText: "لا توجد أجهزة لعرضها" }}
             />
           </Card>
         </Space>
 
+        {/* Add Device Modal (Admin Only) */}
         <Modal
-          title="إضافة جهاز جديد"
-          open={modalOpen}
-          onCancel={() => {
-            setModalOpen(false);
-            form.resetFields();
-          }}
+          title="إضافة جهاز جديد للمخزون"
+          open={addModalOpen}
+          onCancel={() => setAddModalOpen(false)}
+          footer={null}
+          destroyOnClose
+        >
+          <Form form={form} layout="vertical" onFinish={handleAddDevice}>
+            <Form.Item name="name" label="اسم الجهاز">
+              <Input placeholder="اسم الجهاز" />
+            </Form.Item>
+            <Form.Item name="imei" label="IMEI" rules={[{ required: true }]}>
+              <Input placeholder="IMEI" />
+            </Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={submitLoading}
+              block
+            >
+              إضافة
+            </Button>
+          </Form>
+        </Modal>
+
+        {/* Assign Device Modal (Admin Only) */}
+        <Modal
+          title="تخصيص جهاز لمستخدم"
+          open={assignModalOpen}
+          onCancel={() => setAssignModalOpen(false)}
           footer={null}
           destroyOnClose
         >
           <Form
-            form={form}
+            form={assignForm}
             layout="vertical"
-            onFinish={handleSubmit}
+            onFinish={handleAssignDevice}
           >
             <Form.Item
-              name="name"
-              label="اسم الجهاز"
+              name="imei"
+              label="IMEI الجهاز"
+              rules={[{ required: true }]}
             >
-              <Input placeholder="اسم الجهاز (اختياري)" />
+              <Input placeholder="ادخل IMEI" />
             </Form.Item>
             <Form.Item
-              name="imei"
-              label="IMEI"
-              rules={[{ required: true, message: "الرجاء إدخال IMEI" }]}
+              name="userId"
+              label="معرف المستخدم (ID)"
+              rules={[{ required: true }]}
             >
-              <Input placeholder="IMEI" />
+              <Input type="number" placeholder="ID المستخدم" />
             </Form.Item>
-            <Form.Item>
-              <Space>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={submitLoading}
-                >
-                  إضافة
-                </Button>
-                <Button
-                  onClick={() => {
-                    setModalOpen(false);
-                    form.resetFields();
-                  }}
-                >
-                  إلغاء
-                </Button>
-              </Space>
-            </Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={submitLoading}
+              block
+            >
+              تخصيص
+            </Button>
           </Form>
         </Modal>
       </Content>

@@ -9,11 +9,15 @@ import {
   Button,
   Space,
   Select,
+  Row,
+  Col,
+  Empty,
 } from "antd";
 import {
   DownloadOutlined,
   FileExcelOutlined,
   FilePdfOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import {
   LineChart,
@@ -41,31 +45,62 @@ const { Option } = Select;
  * Shows historical data with charts and export functionality
  */
 const History = () => {
+  const [devices, setDevices] = useState([]);
+  const [selectedImei, setSelectedImei] = useState(null);
+
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchingData, setFetchingData] = useState(false);
   const [error, setError] = useState(null);
   const [limit, setLimit] = useState(50);
+
+  // 1. Fetch Devices on Mount
+  useEffect(() => {
+    const init = async () => {
+      try {
+        setLoading(true);
+        const res = await apiService.getDevices();
+        const deviceList = res.data || [];
+        setDevices(deviceList);
+        if (deviceList.length > 0) {
+          setSelectedImei(deviceList[0].imei);
+        }
+      } catch (err) {
+        console.error(err);
+        setError("فشل في جلب الأجهزة");
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
   /**
    * Fetch historical data
    */
   const fetchHistory = async () => {
+    if (!selectedImei) return;
+
     try {
-      setLoading(true);
+      setFetchingData(true);
       setError(null);
-      const response = await apiService.getHistory(limit);
+      // apiService.getHistory(imei, limit)
+      const response = await apiService.getHistory(selectedImei, limit);
       setData(response.readings || []);
-      setLoading(false);
     } catch (err) {
       console.error("Error fetching history:", err);
       setError(err.message || "فشل في جلب البيانات التاريخية");
-      setLoading(false);
+      setData([]);
+    } finally {
+      setFetchingData(false);
     }
   };
 
   useEffect(() => {
-    fetchHistory();
-  }, [limit]);
+    if (selectedImei) {
+      fetchHistory();
+    }
+  }, [selectedImei, limit]);
 
   /**
    * Export to Excel
@@ -83,7 +118,7 @@ const History = () => {
     XLSX.utils.book_append_sheet(wb, ws, "البيانات");
     XLSX.writeFile(
       wb,
-      `temperature-data-${moment().format("YYYY-MM-DD")}.xlsx`
+      `temperature-data-${selectedImei}-${moment().format("YYYY-MM-DD")}.xlsx`,
     );
   };
 
@@ -92,14 +127,11 @@ const History = () => {
    */
   const exportToPDF = () => {
     const doc = new jsPDF();
-
-    // Title
     doc.setFontSize(16);
-    doc.text("Temperature Monitoring Report", 14, 15);
+    doc.text(`Report: ${selectedImei}`, 14, 15);
     doc.setFontSize(10);
     doc.text(`Generated: ${moment().format("YYYY-MM-DD HH:mm")}`, 14, 22);
 
-    // Table
     const tableData = data.map((item) => [
       moment(item.timestamp).format("YYYY-MM-DD"),
       moment(item.timestamp).format("HH:mm:ss"),
@@ -113,7 +145,7 @@ const History = () => {
       startY: 25,
     });
 
-    doc.save(`temperature-report-${moment().format("YYYY-MM-DD")}.pdf`);
+    doc.save(`report-${selectedImei}.pdf`);
   };
 
   // Chart data formatting
@@ -159,22 +191,7 @@ const History = () => {
     return (
       <Layout style={{ minHeight: "100vh", padding: 24 }}>
         <Content style={{ textAlign: "center", paddingTop: 100 }}>
-          <Spin size="large" tip="جاري تحميل البيانات..." />
-        </Content>
-      </Layout>
-    );
-  }
-
-  if (error) {
-    return (
-      <Layout style={{ minHeight: "100vh", padding: 24 }}>
-        <Content>
-          <Alert
-            message="خطأ في الاتصال"
-            description={error}
-            type="error"
-            showIcon
-          />
+          <Spin size="large" tip="جاري تحميل الأجهزة..." />
         </Content>
       </Layout>
     );
@@ -190,92 +207,142 @@ const History = () => {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              flexWrap: "wrap",
+              gap: 16,
             }}
           >
             <Title level={2} style={{ margin: 0 }}>
               📊 السجل والتحليلات
             </Title>
+
             <Space>
+              <Select
+                value={selectedImei}
+                onChange={setSelectedImei}
+                style={{ width: 220 }}
+                placeholder="اختر جهاز"
+              >
+                {devices.map((d) => (
+                  <Option key={d.imei} value={d.imei}>
+                    {d.name}
+                  </Option>
+                ))}
+              </Select>
+
               <Select value={limit} onChange={setLimit} style={{ width: 150 }}>
                 <Option value={10}>آخر 10 قراءات</Option>
                 <Option value={50}>آخر 50 قراءة</Option>
                 <Option value={100}>آخر 100 قراءة</Option>
                 <Option value={500}>آخر 500 قراءة</Option>
               </Select>
+
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={fetchHistory}
+                loading={fetchingData}
+              />
+
               <Button
                 icon={<FileExcelOutlined />}
                 onClick={exportToExcel}
                 type="primary"
+                disabled={data.length === 0}
               >
-                تصدير Excel
+                Excel
               </Button>
-              <Button icon={<FilePdfOutlined />} onClick={exportToPDF}>
-                تصدير PDF
+              <Button
+                icon={<FilePdfOutlined />}
+                onClick={exportToPDF}
+                disabled={data.length === 0}
+              >
+                PDF
               </Button>
             </Space>
           </div>
 
-          {/* Chart */}
-          <Card title="الرسم البياني - آخر 24 ساعة">
-            <ResponsiveContainer width="100%" height={400}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="time"
-                  label={{
-                    value: "الوقت",
-                    position: "insideBottom",
-                    offset: -5,
-                  }}
-                />
-                <YAxis
-                  yAxisId="left"
-                  label={{
-                    value: "الحرارة (°C)",
-                    angle: -90,
-                    position: "insideLeft",
-                  }}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  label={{
-                    value: "الرطوبة (%)",
-                    angle: 90,
-                    position: "insideRight",
-                  }}
-                />
-                <Tooltip />
-                <Legend />
-                <Line
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="temperature"
-                  stroke={CHART_COLORS.TEMPERATURE}
-                  name="الحرارة"
-                  strokeWidth={2}
-                />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="humidity"
-                  stroke={CHART_COLORS.HUMIDITY}
-                  name="الرطوبة"
-                  strokeWidth={2}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </Card>
-
-          {/* Data Table */}
-          <Card title={`جدول البيانات (${data.length} قراءة)`}>
-            <Table
-              columns={columns}
-              dataSource={data}
-              rowKey="timestamp"
-              pagination={{ pageSize: 10 }}
+          {error && (
+            <Alert
+              message="خطأ"
+              description={error}
+              type="error"
+              showIcon
+              closable
             />
-          </Card>
+          )}
+
+          {!selectedImei ? (
+            <Empty description="لا توجد أجهزة" />
+          ) : (
+            <>
+              {/* Chart */}
+              <Card
+                title={`الرسم البياني - ${selectedImei}`}
+                loading={fetchingData}
+              >
+                <ResponsiveContainer width="100%" height={400}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="time"
+                      label={{
+                        value: "الوقت",
+                        position: "insideBottom",
+                        offset: -5,
+                      }}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      label={{
+                        value: "الحرارة (°C)",
+                        angle: -90,
+                        position: "insideLeft",
+                      }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      label={{
+                        value: "الرطوبة (%)",
+                        angle: 90,
+                        position: "insideRight",
+                      }}
+                    />
+                    <Tooltip />
+                    <Legend />
+                    <Line
+                      yAxisId="left"
+                      type="monotone"
+                      dataKey="temperature"
+                      stroke={CHART_COLORS.TEMPERATURE}
+                      name="الحرارة"
+                      strokeWidth={2}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="humidity"
+                      stroke={CHART_COLORS.HUMIDITY}
+                      name="الرطوبة"
+                      strokeWidth={2}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Card>
+
+              {/* Data Table */}
+              <Card
+                title={`جدول البيانات (${data.length} قراءة)`}
+                loading={fetchingData}
+              >
+                <Table
+                  columns={columns}
+                  dataSource={data}
+                  rowKey="id" // Assuming reading has id, if not timestamp
+                  pagination={{ pageSize: 10 }}
+                />
+              </Card>
+            </>
+          )}
         </Space>
       </Content>
     </Layout>

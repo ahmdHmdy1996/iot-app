@@ -1,176 +1,104 @@
 import express from "express";
 import prisma from "../prisma.js";
-import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
+import { authMiddleware, authorizeRole } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Apply API key authentication to all routes
-router.use(apiKeyAuth);
+// Apply JWT authentication to all routes in this router
+router.use(authMiddleware);
+router.use(authorizeRole(["CLIENT", "ADMIN"])); // Allow Clients and Admins
 
 /**
- * GET /api/readings/current
- * Get latest reading for authenticated device
- * Requires x-api-key header
+ * GET /api/my-devices
+ * List all devices assigned to the logged-in user
  */
-router.get("/readings/current", async (req, res) => {
+router.get("/my-devices", async (req, res) => {
   try {
-    const deviceImei = req.device.imei;
+    const userId = req.user.id;
 
-    // Get latest reading
-    const latestReading = await prisma.reading.findFirst({
-      where: { deviceImei },
-      orderBy: { timestamp: "desc" },
+    const devices = await prisma.device.findMany({
+      where: { userId: userId },
+      include: {
+        // Optional: Include latest reading if needed for list view
+        readings: {
+          orderBy: { timestamp: "desc" },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: "desc" },
     });
 
-    if (!latestReading) {
-      return res.status(404).json({
-        success: false,
-        message: "No readings found for this device.",
-      });
-    }
-
-    // Calculate if device is online (last reading within 10 minutes)
-    const now = new Date();
-    const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
-    const isOnline = latestReading.timestamp >= tenMinutesAgo;
+    // Format response
+    const formattedDevices = devices.map((d) => ({
+      imei: d.imei,
+      name: d.name,
+      isActive: d.isActive,
+      lastOnline: d.readings[0]?.timestamp || null,
+      latestTemp: d.readings[0]?.temperature || null,
+    }));
 
     res.json({
       success: true,
-      device_name: req.device.name,
-      imei: req.device.imei,
-      status: {
-        temperature: latestReading.temperature,
-        humidity: latestReading.humidity,
-        voltage: latestReading.voltage,
-        is_online: isOnline,
-      },
-      last_updated: latestReading.timestamp,
+      data: formattedDevices,
     });
   } catch (error) {
-    console.error("Error fetching current reading:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error.",
-    });
+    console.error("Error fetching user devices:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
 /**
- * GET /api/readings/history
- * Get historical readings for authenticated device
- * Query params: limit (default: 50)
- * Requires x-api-key header
+ * GET /api/readings/:imei
+ * Get readings for a specific device (Ownership check required)
  */
-router.get("/readings/history", async (req, res) => {
+router.get("/readings/:imei", async (req, res) => {
   try {
-    const deviceImei = req.device.imei;
-    const limitRaw = req.query.limit;
-    const limit = limitRaw != null ? parseInt(limitRaw, 10) : 50;
-    const safeLimit = Number.isNaN(limit) ? 50 : limit;
+    const { imei } = req.params;
+    const userId = req.user.id;
+    const { limit = 50 } = req.query;
 
-    // Validate limit
-    if (safeLimit < 1 || safeLimit > 1000) {
-      return res.status(400).json({
+    // 1. Check ownership
+    // If admin, they can access anything (optional, but requested logic said "CLIENT can only access their own devices")
+    // implementation_plan said: "Admin can access everything".
+    // So if role is ADMIN, skip ownership check?
+    // The prompt requirement: "CLIENT can only access their own devices." "ADMIN can access everything."
+
+    let device;
+    if (req.user.role === "ADMIN") {
+      device = await prisma.device.findUnique({
+        where: { imei },
+      });
+    } else {
+      device = await prisma.device.findFirst({
+        where: {
+          imei,
+          userId,
+        },
+      });
+    }
+
+    if (!device) {
+      return res.status(403).json({
         success: false,
-        message: "Limit must be between 1 and 1000.",
+        message: "Access denied or device not found.",
       });
     }
 
-    // Get readings (newest first, then reverse for chart order: oldest first)
+    // 2. Fetch Readings
     const readings = await prisma.reading.findMany({
-      where: { deviceImei },
-      take: safeLimit,
+      where: { deviceImei: imei },
+      take: Number(limit),
       orderBy: { timestamp: "desc" },
-      select: { timestamp: true, temperature: true, humidity: true },
     });
-
-    const orderedReadings = [...readings].reverse();
 
     res.json({
       success: true,
-      count: orderedReadings.length,
-      readings: orderedReadings,
+      device: { imei: device.imei, name: device.name },
+      readings: readings,
     });
   } catch (error) {
-    console.error("Error fetching reading history:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error.",
-    });
-  }
-});
-
-/**
- * GET /api/readings/stats
- * Get statistics for authenticated device
- * Query params: hours (default: 24)
- */
-router.get("/readings/stats", async (req, res) => {
-  try {
-    const deviceImei = req.device.imei;
-    const hoursRaw = req.query.hours;
-    const hours = hoursRaw != null ? parseInt(hoursRaw, 10) : 24;
-    const safeHours = Number.isNaN(hours) ? 24 : hours;
-
-    // Calculate time range
-    const now = new Date();
-    const startTime = new Date(now.getTime() - safeHours * 60 * 60 * 1000);
-
-    // Get readings in time range
-    const readings = await prisma.reading.findMany({
-      where: {
-        deviceImei,
-        timestamp: { gte: startTime },
-      },
-      select: { temperature: true, humidity: true },
-    });
-
-    if (readings.length === 0) {
-      return res.json({
-        success: true,
-        message: "No readings in specified time range.",
-        stats: null,
-      });
-    }
-
-    // Calculate statistics
-    const temps = readings.map((r) => r.temperature).filter((t) => t !== null);
-    const humidities = readings
-      .map((r) => r.humidity)
-      .filter((h) => h !== null);
-
-    const stats = {
-      temperature: {
-        min: Math.min(...temps),
-        max: Math.max(...temps),
-        avg: (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1),
-      },
-      humidity:
-        humidities.length > 0
-          ? {
-              min: Math.min(...humidities),
-              max: Math.max(...humidities),
-              avg: (
-                humidities.reduce((a, b) => a + b, 0) / humidities.length
-              ).toFixed(1),
-            }
-          : null,
-      period: {
-        hours: safeHours,
-        readings_count: readings.length,
-      },
-    };
-
-    res.json({
-      success: true,
-      stats,
-    });
-  } catch (error) {
-    console.error("Error calculating stats:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error.",
-    });
+    console.error("Error fetching readings:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 

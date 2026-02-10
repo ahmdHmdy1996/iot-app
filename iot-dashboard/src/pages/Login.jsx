@@ -24,14 +24,14 @@ const Login = () => {
         password: values.password,
       });
       console.log("[Login Debug] Response:", res);
+
       if (res?.success && res?.token) {
-        console.log("[Login Debug] Token received, length:", res.token.length);
         localStorage.setItem(AUTH_TOKEN_KEY, res.token);
-        // Store user info for context
-        localStorage.setItem(
-          "user",
-          JSON.stringify({ username: values.username }),
-        );
+
+        // Store user info (including role)
+        const user = res.user || { username: values.username, role: "CLIENT" }; // Fallback
+        localStorage.setItem("user", JSON.stringify(user));
+
         message.success("تم تسجيل الدخول بنجاح");
         navigate("/", { replace: true });
       } else {
