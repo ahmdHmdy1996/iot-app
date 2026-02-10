@@ -20,6 +20,8 @@ import arEG from "antd/locale/ar_EG";
 import LiveMonitor from "./pages/LiveMonitor";
 import History from "./pages/History";
 import Devices from "./pages/Devices";
+import DeviceDetails from "./pages/DeviceDetails";
+import UserManagement from "./pages/UserManagement";
 import Login from "./pages/Login";
 import PrivateRoute from "./components/PrivateRoute";
 import "./App.css";
@@ -98,6 +100,8 @@ function App() {
             <Route index element={<LiveMonitor />} />
             <Route path="devices" element={<Devices />} />
             <Route path="history" element={<History />} />
+            <Route path="device/:imei" element={<DeviceDetails />} />
+            <Route path="admin/users" element={<UserManagement />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

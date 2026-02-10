@@ -110,14 +110,37 @@ class ApiService {
   // I should probably remove it from frontend for now or handle it.
 
   /**
-   * Admin: Create Device
+   * Admin: Get Users
+   */
+  async getUsers() {
+    return await this.client.get("/admin/users");
+  }
+
+  /**
+   * Admin: Create User
+   */
+  async createUser(data) {
+    return await this.client.post("/admin/users", data);
+  }
+
+  /**
+   * Admin: Assign Device to User
+   */
+  async assignDeviceToUser(data) {
+    return await this.client.post("/admin/assign-device", data);
+  }
+
+  /**
+   * Admin: Create Device (Legacy but kept)
    */
   async createDevice(data) {
     return await this.client.post("/admin/devices", data);
   }
 
   /**
-   * Admin: Assign Device
+   * Admin: Assign Device (Legacy naming, maybe same endpoint?)
+   * The user request said: POST /admin/assign-device
+   * So I will use assignDeviceToUser for that.
    */
   async assignDevice(data) {
     return await this.client.post("/admin/devices/assign", data);

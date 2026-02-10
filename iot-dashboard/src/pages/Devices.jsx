@@ -19,6 +19,7 @@ import {
   UserAddOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
+import { Link } from "react-router-dom";
 import apiService from "../services/api";
 
 const { Content } = Layout;
@@ -127,7 +128,11 @@ const Devices = () => {
       title: "اسم الجهاز",
       dataIndex: "name",
       key: "name",
-      render: (name) => <span style={{ fontWeight: 500 }}>{name || "—"}</span>,
+      render: (name, record) => (
+        <Link to={`/device/${record.imei}`} style={{ fontWeight: 500 }}>
+          {name || "—"}
+        </Link>
+      ),
     },
     {
       title: "IMEI",

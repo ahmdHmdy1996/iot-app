@@ -38,7 +38,11 @@ const Sidebar = () => {
   if (role === "ADMIN") {
     items.push(
       { key: "/devices", icon: <DesktopOutlined />, label: "إدارة الأجهزة" },
-      { key: "/users", icon: <UserOutlined />, label: "إدارة المستخدمين" }, // Future placeholder
+      {
+        key: "/admin/users",
+        icon: <UserOutlined />,
+        label: "إدارة المستخدمين",
+      },
     );
   } else {
     // Client Items

@@ -12,6 +12,7 @@ import {
   Button,
   Card,
 } from "antd";
+import { useNavigate } from "react-router-dom";
 import { ReloadOutlined } from "@ant-design/icons";
 import moment from "moment";
 import StatusCard from "../components/StatusCard";
@@ -27,6 +28,7 @@ const { Option } = Select;
  * Main dashboard showing current device status with auto-refresh
  */
 const LiveMonitor = () => {
+  const navigate = useNavigate();
   const [devices, setDevices] = useState([]);
   const [selectedImei, setSelectedImei] = useState(null);
   const [data, setData] = useState(null);
@@ -198,14 +200,19 @@ const LiveMonitor = () => {
             <Row gutter={[16, 16]}>
               <Col xs={24} sm={24} md={12} lg={8}>
                 {data ? (
-                  <StatusCard
-                    deviceName={data.device_name}
-                    temperature={data.status?.temperature}
-                    humidity={data.status?.humidity}
-                    voltage={data.status?.voltage}
-                    isOnline={data.status?.is_online}
-                    lastUpdated={data.last_updated}
-                  />
+                  <div
+                    style={{ cursor: "pointer" }}
+                    onClick={() => navigate(`/device/${selectedImei}`)}
+                  >
+                    <StatusCard
+                      deviceName={data.device_name}
+                      temperature={data.status?.temperature}
+                      humidity={data.status?.humidity}
+                      voltage={data.status?.voltage}
+                      isOnline={data.status?.is_online}
+                      lastUpdated={data.last_updated}
+                    />
+                  </div>
                 ) : (
                   <Card loading={true} />
                 )}
