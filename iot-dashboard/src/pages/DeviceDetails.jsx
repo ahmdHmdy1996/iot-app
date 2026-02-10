@@ -31,23 +31,27 @@ const DeviceDetails = () => {
   const { imei } = useParams();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
+  const [deviceName, setDeviceName] = useState(null);
   const [error, setError] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
       const result = await api.getHistory(imei, 50);
 
-      // Handle response format: ensure it's an array
-      // api.getHistory returns response.data directly due to interceptor
-      // But we should verify if it's { success: true, data: [...] } or just [...]
-      // Based on previous convos, backend might return array directly or object.
-      // Let's assume standard response: { success: true, data: [...] } or just [...]
-      // Safe check:
       let readings = [];
-      if (Array.isArray(result)) {
+      // The API returns { success: true, device: {...}, readings: [...] }
+      if (result.readings && Array.isArray(result.readings)) {
+        readings = result.readings;
+      } else if (Array.isArray(result)) {
         readings = result;
       } else if (result.data && Array.isArray(result.data)) {
         readings = result.data;
+      }
+
+      // Also try to get device info if available to show name
+      if (result.device && result.device.name) {
+        // You might want to store this in state to display instead of just IMEI
+        setDeviceName(result.device.name);
       }
 
       // Sort by timestamp asc for chart (oldest first)
@@ -119,7 +123,8 @@ const DeviceDetails = () => {
   return (
     <div style={{ padding: "24px" }}>
       <Title level={2}>
-        تفاصيل الجهاز: <span style={{ fontFamily: "monospace" }}>{imei}</span>
+        تفاصيل الجهاز:{" "}
+        <span style={{ fontFamily: "monospace" }}>{deviceName || imei}</span>
       </Title>
 
       {error && (
