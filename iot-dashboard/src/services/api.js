@@ -54,8 +54,10 @@ class ApiService {
             console.warn(
               "[API Debug] 401 Unauthorized - Clearing token and redirecting",
             );
-            localStorage.removeItem(AUTH_TOKEN_KEY);
-            window.location.href = "/login";
+            console.warn("🛑 401 Unauthorized DETECTED!");
+            console.warn("⚠️ Redirect is BLOCKED for debugging.");
+            // localStorage.removeItem(AUTH_TOKEN_KEY);
+            // window.location.href = "/login";
             return Promise.reject(new Error("غير مصرح. يرجى تسجيل الدخول."));
           }
           throw new Error(error.response.data?.message || "Server error");
