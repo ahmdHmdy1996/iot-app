@@ -56,6 +56,10 @@ class ApiService {
             );
             console.warn("🛑 401 Unauthorized DETECTED!");
             console.warn("⚠️ Redirect is BLOCKED for debugging.");
+
+            // Pauses execution for debugging
+            debugger;
+
             // localStorage.removeItem(AUTH_TOKEN_KEY);
             // window.location.href = "/login";
             return Promise.reject(new Error("غير مصرح. يرجى تسجيل الدخول."));
