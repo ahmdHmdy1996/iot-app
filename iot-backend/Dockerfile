@@ -2,23 +2,26 @@
 
 FROM node:20-alpine
 
+# Install OpenSSL (Required for Prisma Engine)
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
-# نسخ ملفات تعريف المشروع
+# Copy package files
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# تثبيت المكاتب
-RUN npm install
+# Install dependencies
+RUN npm install --ignore-scripts
 
-# توليد عميل Prisma
+# Generate Prisma Client
 RUN npx prisma generate
 
-# نسخ باقي كود المشروع
+# Copy source code
 COPY . .
 
-# فتح البورتات
+# Expose ports
 EXPOSE 3000 8899
 
-# أمر التشغيل (مع الميغريشن)
+# Start command
 CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

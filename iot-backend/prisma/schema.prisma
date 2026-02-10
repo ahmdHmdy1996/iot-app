@@ -35,8 +35,6 @@ model Reading {
 
   @@index([deviceImei, timestamp(sort: Desc)])
   @@map("readings")
-  @@index([deviceImei, timestamp(sort: Desc)])
-  @@map("readings")
 }
 
 model User {

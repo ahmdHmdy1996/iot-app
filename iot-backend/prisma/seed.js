@@ -17,16 +17,15 @@ async function main() {
 
   // 1. Seed Admin User
   const adminUsername = "admin";
-  const adminPassword = "123456"; // Fixed password as requested
+  const adminPassword = "123456";
 
-  // Hash the password
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash(adminPassword, salt);
+  // Hash the password (10 rounds)
+  const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
   const adminUser = await prisma.user.upsert({
     where: { username: adminUsername },
     update: {
-      // Optional: Update password on seed if you want to reset it every time
+      // Uncomment to reset password on every seed if desired
       // password: hashedPassword
     },
     create: {
@@ -40,7 +39,7 @@ async function main() {
     `✅ Admin user verified: ${adminUser.username} (Role: ${adminUser.role})`,
   );
 
-  // 2. Seed Test Devices (Optional, keeping existing logic)
+  // 2. Seed Test Devices
   const devices = [
     {
       imei: "TEST001",

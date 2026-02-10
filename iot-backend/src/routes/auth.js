@@ -15,8 +15,10 @@ router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const jwtSecret = process.env.JWT_SECRET;
 
+  console.log(`[Auth] Login attempt for user: ${username}`);
+
   if (!jwtSecret) {
-    console.error("Auth: JWT_SECRET not set");
+    console.error("[Auth] CRITICAL: JWT_SECRET not set in .env");
     return res.status(500).json({
       success: false,
       message: "Server authentication not configured.",
@@ -24,6 +26,7 @@ router.post("/login", async (req, res) => {
   }
 
   if (!username || !password) {
+    console.log("[Auth] Missing username or password");
     return res.status(400).json({
       success: false,
       message: "اسم المستخدم وكلمة المرور مطلوبان.",
@@ -37,21 +40,25 @@ router.post("/login", async (req, res) => {
     });
 
     if (!user) {
+      console.log(`[Auth] User not found: ${username}`);
       return res.status(401).json({
         success: false,
         message: "بيانات الدخول غير صحيحة.",
       });
     }
+    console.log(`[Auth] 1. User found: ${user.username} (ID: ${user.id})`);
 
     // 2. Compare password (bcrypt)
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
+      console.log(`[Auth] Password mismatch for user: ${username}`);
       return res.status(401).json({
         success: false,
         message: "بيانات الدخول غير صحيحة.",
       });
     }
+    console.log(`[Auth] 2. Password match confirmed.`);
 
     // 3. Generate Token
     const token = jwt.sign(
@@ -63,6 +70,7 @@ router.post("/login", async (req, res) => {
       jwtSecret,
       { expiresIn: "24h" },
     );
+    console.log(`[Auth] 3. JWT generated successfully.`);
 
     return res.json({
       success: true,
@@ -74,7 +82,7 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Login error:", err);
+    console.error("[Auth] Exception during login:", err);
     return res.status(500).json({
       success: false,
       message: "Internal server error.",

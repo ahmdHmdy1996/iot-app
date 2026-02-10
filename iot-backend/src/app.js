@@ -11,16 +11,8 @@ dotenv.config();
 
 const app = express();
 
-// CORS Configuration - Allow all origins for development
-const corsOptions = {
-  origin: true, // Reflect the request origin (works with credentials)
-  credentials: true, // Allow cookies/authorization headers
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-};
-
 // Middleware
-app.use(cors(corsOptions));
+app.use(cors()); // Allow all origins (temp fix for production)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -52,9 +44,9 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
+// Global Error Handler
 app.use((err, req, res, next) => {
-  console.error("Error:", err);
+  console.error("Global Error:", err);
   res.status(500).json({
     success: false,
     message: "Internal server error",
