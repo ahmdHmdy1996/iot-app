@@ -10,7 +10,7 @@ class ApiService {
       baseURL: API_BASE_URL,
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
+        "x-api-key": "560bb6b4-99af-4054-802b-4677c9ca3115",
       },
     });
 
