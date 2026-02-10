@@ -10,9 +10,9 @@ import { AUTH_TOKEN_KEY } from "../config/constants";
 function PrivateRoute({ children }) {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
 
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+  // if (!token) {
+  //   return <Navigate to="/login" replace />;
+  // }
 
   return children ? children : <Outlet />;
 }
