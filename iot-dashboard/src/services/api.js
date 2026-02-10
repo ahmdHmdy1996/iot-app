@@ -127,7 +127,8 @@ class ApiService {
    * Admin: Assign Device to User
    */
   async assignDeviceToUser(data) {
-    return await this.client.post("/admin/assign-device", data);
+    // Backend endpoint is /admin/devices/assign
+    return await this.client.post("/admin/devices/assign", data);
   }
 
   /**

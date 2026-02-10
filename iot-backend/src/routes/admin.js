@@ -50,6 +50,32 @@ router.post("/users", async (req, res) => {
 });
 
 /**
+ * GET /admin/users
+ * List all users
+ */
+router.get("/users", async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/**
  * POST /admin/devices
  * Create a new device (Inventory)
  */
