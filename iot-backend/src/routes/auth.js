@@ -31,6 +31,7 @@ router.post("/login", async (req, res) => {
   }
 
   try {
+    // 1. Find user in DB
     const user = await prisma.user.findUnique({
       where: { username },
     });
@@ -42,6 +43,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // 2. Compare password (bcrypt)
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
@@ -51,15 +53,22 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // 3. Generate Token
     const token = jwt.sign(
-      { username: user.username, role: user.role },
+      {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+      },
       jwtSecret,
       { expiresIn: "24h" },
     );
+
     return res.json({
       success: true,
       token,
       user: {
+        id: user.id,
         username: user.username,
         role: user.role,
       },

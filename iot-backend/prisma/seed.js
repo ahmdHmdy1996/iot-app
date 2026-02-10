@@ -4,8 +4,7 @@
  * This script creates/updates the admin user in the database.
  * Run with: npx prisma db seed
  *
- * Note: Current auth uses plain-text comparison from .env variables.
- * This seed adds an Admin model for future database-backed auth.
+ * It ensures the admin user exists with a BCrypt-hashed password.
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -16,14 +15,20 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Seeding database...");
 
-  // Seed Admin User
+  // 1. Seed Admin User
   const adminUsername = "admin";
-  const adminPassword = "123456"; // Default password
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+  const adminPassword = "123456"; // Fixed password as requested
+
+  // Hash the password
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(adminPassword, salt);
 
   const adminUser = await prisma.user.upsert({
     where: { username: adminUsername },
-    update: {}, // Don't update if exists
+    update: {
+      // Optional: Update password on seed if you want to reset it every time
+      // password: hashedPassword
+    },
     create: {
       username: adminUsername,
       password: hashedPassword,
@@ -31,9 +36,11 @@ async function main() {
     },
   });
 
-  console.log(`✅ Admin user verified: ${adminUser.username}`);
+  console.log(
+    `✅ Admin user verified: ${adminUser.username} (Role: ${adminUser.role})`,
+  );
 
-  // Seed some test devices
+  // 2. Seed Test Devices (Optional, keeping existing logic)
   const devices = [
     {
       imei: "TEST001",
