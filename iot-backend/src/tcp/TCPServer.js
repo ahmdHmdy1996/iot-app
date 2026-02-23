@@ -80,35 +80,49 @@ class TCPServer {
    * @returns {{ frame: Buffer|null, remaining: Buffer }}
    */
   extractOneFrame(buffer) {
-    // Find 0D0A stop marker
-    for (let i = 1; i < buffer.length; i++) {
-      if (buffer[i - 1] === 0x0d && buffer[i] === 0x0a) {
-        // Found stop marker at index i
-        const frameEnd = i + 1;
-
-        // Look for TZ start marker
-        let frameStart = -1;
-        for (let j = 0; j < frameEnd - 1; j++) {
-          if (buffer[j] === 0x54 && buffer[j + 1] === 0x5a) {
-            frameStart = j;
-            break;
-          }
-        }
-
-        if (frameStart >= 0) {
-          // Extract frame from TZ to 0D0A inclusive
-          const frame = buffer.slice(frameStart, frameEnd);
-          const remaining = buffer.slice(frameEnd);
-          return { frame, remaining };
-        } else {
-          // No TZ found before this 0D0A, discard data up to and including 0D0A
-          const remaining = buffer.slice(frameEnd);
-          return { frame: null, remaining };
-        }
+    // 1. Find the 'TZ' start marker
+    let frameStart = -1;
+    for (let i = 0; i < buffer.length - 1; i++) {
+      if (buffer[i] === 0x54 && buffer[i + 1] === 0x5a) {
+        frameStart = i;
+        break;
       }
     }
 
-    // No complete frame found
+    if (frameStart === -1) {
+      // No 'TZ' found. Keeping potentially trailing 'T' for the next chunk
+      if (buffer.length > 0 && buffer[buffer.length - 1] === 0x54) {
+        return { frame: null, remaining: buffer.slice(buffer.length - 1) };
+      }
+      return { frame: null, remaining: Buffer.alloc(0) };
+    }
+
+    // Discard garbage before 'TZ'
+    if (frameStart > 0) {
+      buffer = buffer.slice(frameStart);
+    }
+
+    // Need at least 4 bytes to read length (TZ + 2-byte length)
+    if (buffer.length < 4) {
+      return { frame: null, remaining: buffer };
+    }
+
+    const packetLen = (buffer[2] << 8) | buffer[3];
+    const expectedTotalLen = 2 + 2 + packetLen + 2;
+
+    // Sanity check length to prevent huge buffers on corrupted data
+    if (expectedTotalLen > 512 || expectedTotalLen < 8) {
+      // Invalid length, likely false 'TZ' match or corruption. Skip this 'T' and retry.
+      return { frame: null, remaining: buffer.slice(1) };
+    }
+
+    if (buffer.length >= expectedTotalLen) {
+      const frame = buffer.slice(0, expectedTotalLen);
+      const remaining = buffer.slice(expectedTotalLen);
+      return { frame, remaining };
+    }
+
+    // Not enough data yet, wait for more
     return { frame: null, remaining: buffer };
   }
 
@@ -123,36 +137,33 @@ class TCPServer {
       let buffer = this.clientBuffers.get(socket) || Buffer.alloc(0);
       buffer = Buffer.concat([buffer, data]);
 
-      const hexData = data.toString("hex");
-      console.log("[TCP] Received data (hex):", hexData);
-      console.log("[TCP] Received data (length):", data.length, "bytes");
+      const chunkHex = data.toString("hex").toUpperCase();
+      console.log(
+        `[TCP] Received chunk: ${data.length} bytes | HEX: ${chunkHex}`,
+      );
+      console.log(`[TCP] Total buffer size is now: ${buffer.length} bytes`);
 
-      // Check if this looks like a WF501 frame (starts with TZ)
-      // If not, log and skip
-      if (data.length >= 2 && (data[0] !== 0x54 || data[1] !== 0x5a)) {
+      // Check if the accumulated buffer starts with a known non-IoT packet type
+      if (buffer.length >= 2 && (buffer[0] !== 0x54 || buffer[1] !== 0x5a)) {
         // Check if it's a known non-WF501 packet type we can identify
-        if (data[0] === 0x16 && data[1] === 0x03) {
+        if (buffer[0] === 0x16 && buffer[1] === 0x03) {
           console.log("[TCP] Ignored: TLS/SSL handshake packet");
           this.clientBuffers.set(socket, Buffer.alloc(0));
           return;
         }
-        if (data[0] === 0x15 && data[1] === 0x03) {
+        if (buffer[0] === 0x15 && buffer[1] === 0x03) {
           console.log("[TCP] Ignored: TLS alert packet");
           this.clientBuffers.set(socket, Buffer.alloc(0));
           return;
         }
-        if (hexData.startsWith("474554")) {
+        if (buffer.toString("hex", 0, 3).toUpperCase() === "474554") {
           // "GET" in hex
           console.log("[TCP] Ignored: HTTP GET request");
           this.clientBuffers.set(socket, Buffer.alloc(0));
           return;
         }
-        // Only warn if buffer doesn't start with partial TZ
-        if (buffer.length >= 2 && buffer[0] !== 0x54) {
-          console.log(
-            "[TCP] Warning: Data doesn't start with TZ header, checking buffer for frames...",
-          );
-        }
+        // In other cases, we will just pass it to extractOneFrame which will
+        // discard leading garbage to sync to the next 'TZ'.
       }
 
       // Process all complete frames in buffer
