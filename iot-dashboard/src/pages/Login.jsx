@@ -1,110 +1,201 @@
 import React, { useState } from "react";
-import { Card, Form, Input, Button, Typography, message } from "antd";
-import { UserOutlined, LockOutlined } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import {
+  Thermometer,
+  ShieldCheck,
+  BarChart3,
+  Mail,
+  Lock,
+  Loader2,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import apiService from "../services/api";
 import { AUTH_TOKEN_KEY } from "../config/constants";
 
-const { Title } = Typography;
-
 /**
- * Login Page – Arabic, RTL, centered card
+ * Login Page – Premium split-screen layout, RTL Arabic
  */
 const Login = () => {
   const [loading, setLoading] = useState(false);
-  const [form] = Form.useForm();
+  const [error, setError] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
-  const onFinish = async (values) => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!username || !password) {
+      setError("يرجى إدخال اسم المستخدم وكلمة المرور");
+      return;
+    }
+
     setLoading(true);
     try {
-      console.log("[Login Debug] Attempting login for:", values.username);
-      const res = await apiService.login({
-        username: values.username,
-        password: values.password,
-      });
-      console.log("[Login Debug] Response:", res);
+      const res = await apiService.login({ username, password });
 
       if (res?.success && res?.token) {
         localStorage.setItem(AUTH_TOKEN_KEY, res.token);
-
-        // Store user info (including role)
-        const user = res.user || { username: values.username, role: "CLIENT" }; // Fallback
+        const user = res.user || { username, role: "CLIENT" };
         localStorage.setItem("user", JSON.stringify(user));
-
-        message.success("تم تسجيل الدخول بنجاح");
         navigate("/", { replace: true });
       } else {
-        console.error("[Login Debug] No token in response:", res);
-        message.error("فشل تسجيل الدخول");
+        setError("فشل تسجيل الدخول");
       }
     } catch (err) {
-      console.error("[Login Debug] Error:", err);
-      message.error(err?.message || "فشل تسجيل الدخول");
+      setError(err?.message || "فشل تسجيل الدخول");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f0f2f5",
-        padding: 24,
-      }}
-    >
-      <Card
-        style={{
-          width: "100%",
-          maxWidth: 400,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-        }}
+    <div className="min-h-screen flex flex-row-reverse">
+      {/* ─── Right Side: Form Area (RTL) ─── */}
+      <div
+        dir="rtl"
+        className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white"
       >
-        <Title level={3} style={{ textAlign: "center", marginBottom: 24 }}>
-          تسجيل الدخول
-        </Title>
-        <Form
-          form={form}
-          name="login"
-          onFinish={onFinish}
-          layout="vertical"
-          requiredMark={false}
-          size="large"
-        >
-          <Form.Item
-            name="username"
-            label="اسم المستخدم"
-            rules={[{ required: true, message: "يرجى إدخال اسم المستخدم" }]}
-          >
-            <Input prefix={<UserOutlined />} placeholder="اسم المستخدم" />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            label="كلمة المرور"
-            rules={[{ required: true, message: "يرجى إدخال كلمة المرور" }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="كلمة المرور"
-            />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
+        <div className="max-w-md w-full">
+          {/* Logo / Brand Mark */}
+          <div className="flex items-center gap-2 mb-8">
+            <div className="h-10 w-10 rounded-xl bg-slate-900 flex items-center justify-center">
+              <Thermometer className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl font-bold text-slate-900">
+              IoT Monitor
+            </span>
+          </div>
+
+          {/* Heading */}
+          <h1 className="text-2xl font-bold text-slate-900 mb-1">
+            مرحباً بك مجدداً
+          </h1>
+          <p className="text-slate-500 mb-8">
+            قم بتسجيل الدخول للوصول إلى لوحة التحكم
+          </p>
+
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">
+              {error}
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="username" className="text-slate-700">
+                البريد الإلكتروني
+              </Label>
+              <div className="relative">
+                <Mail className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  id="username"
+                  type="text"
+                  placeholder="أدخل اسم المستخدم"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="pr-10 h-11 bg-slate-50 border-slate-200 focus:bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-slate-700">
+                كلمة المرور
+              </Label>
+              <div className="relative">
+                <Lock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="أدخل كلمة المرور"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-10 h-11 bg-slate-50 border-slate-200 focus:bg-white"
+                />
+              </div>
+            </div>
+
             <Button
-              type="primary"
-              htmlType="submit"
-              loading={loading}
-              block
-              size="large"
+              type="submit"
+              disabled={loading}
+              className="w-full h-11 text-base font-medium bg-slate-900 hover:bg-slate-800"
             >
-              دخول
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  جاري تسجيل الدخول...
+                </>
+              ) : (
+                "تسجيل الدخول"
+              )}
             </Button>
-          </Form.Item>
-        </Form>
-      </Card>
+          </form>
+
+          {/* Register Link */}
+          <p className="mt-6 text-center text-sm text-slate-500">
+            ليس لديك حساب؟{" "}
+            <Link
+              to="/register"
+              className="font-semibold text-slate-900 hover:text-slate-700 transition-colors"
+            >
+              إنشاء حساب جديد
+            </Link>
+          </p>
+        </div>
+      </div>
+
+      {/* ─── Left Side: Branding Area ─── */}
+      <div className="hidden lg:flex w-1/2 bg-slate-900 items-center justify-center flex-col text-white p-12 relative overflow-hidden">
+        {/* Decorative Background Shapes */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-slate-800/50" />
+          <div className="absolute bottom-12 right-12 w-72 h-72 rounded-full bg-slate-800/30" />
+          <div className="absolute top-1/2 left-1/3 w-48 h-48 rounded-full bg-blue-500/10" />
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 max-w-lg text-center space-y-8">
+          {/* Icon */}
+          <div className="mx-auto h-20 w-20 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center">
+            <Thermometer className="h-10 w-10 text-blue-400" />
+          </div>
+
+          <div className="space-y-4">
+            <h2 className="text-3xl font-bold leading-relaxed">
+              مراقبة ذكية لحرارة أجهزتك
+            </h2>
+            <p className="text-slate-400 text-lg leading-relaxed">
+              نظام متكامل لضمان جودة التخزين وسلامة المنتجات
+            </p>
+          </div>
+
+          {/* Feature Highlights */}
+          <div className="grid grid-cols-1 gap-4 mt-8 text-right" dir="rtl">
+            <div className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3 backdrop-blur-sm border border-white/10">
+              <div className="h-9 w-9 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+                <BarChart3 className="h-4 w-4 text-blue-400" />
+              </div>
+              <span className="text-sm text-slate-300">
+                تحليلات مباشرة ورسوم بيانية تفاعلية
+              </span>
+            </div>
+            <div className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-3 backdrop-blur-sm border border-white/10">
+              <div className="h-9 w-9 rounded-lg bg-emerald-500/20 flex items-center justify-center shrink-0">
+                <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              </div>
+              <span className="text-sm text-slate-300">
+                تنبيهات فورية عند تجاوز الحدود
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

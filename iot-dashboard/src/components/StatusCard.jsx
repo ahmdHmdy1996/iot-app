@@ -1,132 +1,139 @@
 import React from "react";
-import { Card, Statistic, Badge, Row, Col, Typography, Space } from "antd";
 import {
-  ThunderboltOutlined,
-  WifiOutlined,
-  DisconnectOutlined,
-  WarningOutlined,
-} from "@ant-design/icons";
-import moment from "moment";
-import {
-  STATUS_COLORS,
-  TEMP_WARNING_THRESHOLD,
-  TEMP_CRITICAL_THRESHOLD,
-} from "../config/constants";
+  Card,
+  CardHeader,
+  CardContent,
+} from "@/components/ui/card";
+import { Battery, Droplets, Zap } from "lucide-react";
+import { TEMP_CRITICAL_THRESHOLD } from "../config/constants";
 
-const { Text } = Typography;
+const TEMP_COLD_THRESHOLD = 2; // °C – below this show "too cold" blue
 
 /**
- * StatusCard Component
- * Displays device status with temperature, humidity, battery, and online status
+ * StatusCard – Premium device card with shadcn Card, Tailwind, lucide icons.
+ * Chic, colorful, animated; RTL-friendly.
  */
 const StatusCard = ({
   deviceName,
   temperature,
   humidity,
   voltage,
+  batteryLevel,
   isOnline,
+  isOffline,
   lastUpdated,
+  onClick,
 }) => {
-  // Determine status based on temperature and online state
-  const getStatus = () => {
-    if (!isOnline) return "OFFLINE";
-    if (temperature > TEMP_CRITICAL_THRESHOLD) return "CRITICAL";
-    if (temperature > TEMP_WARNING_THRESHOLD) return "WARNING";
-    return "NORMAL";
+  const offline = isOffline === true || !isOnline;
+
+  const hasCriticalAlert =
+    !offline &&
+    temperature != null &&
+    (temperature >= TEMP_CRITICAL_THRESHOLD || temperature <= TEMP_COLD_THRESHOLD);
+
+  const getTempColor = () => {
+    if (offline) return "text-slate-400";
+    if (temperature == null) return "text-slate-800";
+    if (temperature >= TEMP_CRITICAL_THRESHOLD) return "text-rose-500";
+    if (temperature <= TEMP_COLD_THRESHOLD) return "text-blue-500";
+    return "text-slate-800";
   };
 
-  const status = getStatus();
-  const statusColor = STATUS_COLORS[status];
+  const tempDisplay =
+    temperature != null ? Number(temperature).toFixed(1) : "—";
 
   return (
     <Card
-      hoverable
-      style={{
-        borderColor: statusColor,
-        borderWidth: status === "CRITICAL" ? 3 : 1,
-        opacity: isOnline ? 1 : 0.6,
-      }}
+      className="relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
+      onClick={onClick}
     >
       {/* Header */}
-      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-        <Col>
-          <Text strong style={{ fontSize: 18 }}>
-            {deviceName || "جهاز غير مسمى"}
-          </Text>
-        </Col>
-        <Col>
-          <Badge
-            status={isOnline ? "success" : "default"}
-            text={isOnline ? "متصل" : "غير متصل"}
-          />
-        </Col>
-      </Row>
+      <CardHeader className="flex flex-row justify-between items-center p-5 border-b border-slate-50/50 space-y-0">
+        <span className="font-semibold text-slate-800" dir="rtl">
+          {deviceName || "جهاز غير مسمى"}
+        </span>
+        {!offline ? (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700" dir="rtl">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            متصل
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500" dir="rtl">
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+            غير متصل
+          </span>
+        )}
+      </CardHeader>
 
-      {/* Temperature Display */}
-      <Row justify="center" style={{ marginBottom: 20 }}>
-        <Col>
-          <Statistic
-            value={temperature}
-            precision={1}
-            suffix="°C"
-            valueStyle={{
-              color: statusColor,
-              fontSize: 48,
-              fontWeight: "bold",
-            }}
-          />
-        </Col>
-      </Row>
+      {/* Main body – temperature */}
+      <CardContent className="p-6 pt-6 pb-4">
+        <div className="flex flex-col items-center justify-center">
+          <div
+            className={`text-6xl font-black tracking-tighter ${getTempColor()}`}
+            dir="rtl"
+          >
+            {tempDisplay}
+            <span className="text-4xl font-bold opacity-80">°C</span>
+          </div>
+          <p className="text-sm text-slate-500 mt-1" dir="rtl">
+            درجة الحرارة
+          </p>
+          {hasCriticalAlert && (
+            <span
+              className="mt-3 bg-rose-50 text-rose-600 px-4 py-1.5 rounded-full text-sm font-medium animate-pulse"
+              dir="rtl"
+            >
+              {temperature >= TEMP_CRITICAL_THRESHOLD
+                ? "تنبيه حرج!"
+                : "درجة منخفضة"}
+            </span>
+          )}
+        </div>
+      </CardContent>
 
-      {/* Alert Badge for Critical/Warning */}
-      {(status === "CRITICAL" || status === "WARNING") && (
-        <Row justify="center" style={{ marginBottom: 16 }}>
-          <Badge
-            count={status === "CRITICAL" ? "تنبيه حرج!" : "تحذير"}
-            style={{
-              backgroundColor: statusColor,
-            }}
-          />
-        </Row>
-      )}
+      {/* Footer – minor stats */}
+      <div className="flex justify-between items-center bg-slate-50 p-4 m-2 rounded-xl" dir="rtl">
+        <div className="flex flex-col items-center gap-0.5 min-w-0 flex-1">
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 p-1.5">
+            <Droplets className="w-4 h-4" />
+          </span>
+          <span className="text-xs text-slate-500">الرطوبة</span>
+          <span className="text-sm font-semibold text-slate-800">
+            {humidity != null ? `${humidity}%` : "—"}
+          </span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5 min-w-0 flex-1">
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 p-1.5">
+            <Battery className="w-4 h-4" />
+          </span>
+          <span className="text-xs text-slate-500">البطارية</span>
+          <span className="text-sm font-semibold text-slate-800">
+            {batteryLevel != null
+              ? `${Number(batteryLevel)}%`
+              : voltage != null
+                ? `${voltage}V`
+                : "—"}
+          </span>
+        </div>
+        <div className="flex flex-col items-center gap-0.5 min-w-0 flex-1">
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-violet-100 text-violet-600 p-1.5">
+            <Zap className="w-4 h-4" />
+          </span>
+          <span className="text-xs text-slate-500">الطاقة</span>
+          <span className="text-sm font-semibold text-slate-800">
+            {voltage != null ? `${voltage}V` : "—"}
+          </span>
+        </div>
+      </div>
 
-      {/* Humidity, Battery, and Last Update */}
-      <Row gutter={16}>
-        <Col span={8}>
-          <Space direction="vertical" size={0}>
-            <Text type="secondary">الرطوبة</Text>
-            <Text strong>{humidity ? `${humidity}%` : "-"}</Text>
-          </Space>
-        </Col>
-        <Col span={8}>
-          <Space direction="vertical" size={0}>
-            <Text type="secondary">البطارية</Text>
-            <Space>
-              <ThunderboltOutlined />
-              <Text strong>{voltage ? `${voltage}V` : "-"}</Text>
-            </Space>
-          </Space>
-        </Col>
-        <Col span={8}>
-          <Space direction="vertical" size={0}>
-            <Text type="secondary">آخر تحديث</Text>
-            <Text strong style={{ fontSize: 12 }}>
-              {moment(lastUpdated).format("HH:mm")}
-            </Text>
-          </Space>
-        </Col>
-      </Row>
-
-      {/* Offline Warning */}
-      {!isOnline && (
-        <Row justify="center" style={{ marginTop: 16 }}>
-          <Space>
-            <DisconnectOutlined style={{ color: STATUS_COLORS.OFFLINE }} />
-            <Text type="secondary">
-              آخر اتصال: {moment(lastUpdated).fromNow()}
-            </Text>
-          </Space>
-        </Row>
+      {lastUpdated && (
+        <p className="text-xs text-slate-400 text-center pb-3" dir="rtl">
+          آخر تحديث:{" "}
+          {new Date(lastUpdated).toLocaleTimeString("ar-SA", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </p>
       )}
     </Card>
   );

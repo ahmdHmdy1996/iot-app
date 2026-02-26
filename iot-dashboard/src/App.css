@@ -35,3 +35,31 @@ code {
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+/* Header user dropdown trigger hover */
+.header-user-trigger:hover {
+  background: rgba(79, 70, 229, 0.06);
+}
+
+/* Remove default borders for a cohesive, borderless SaaS look */
+.ant-card {
+  border: none !important;
+}
+.ant-select-selector,
+.ant-input,
+.ant-input-affix-wrapper {
+  border: none !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06) !important;
+}
+.ant-select-selector:focus-within,
+.ant-input:focus,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2) !important;
+}
+.ant-alert {
+  border: none !important;
+}
+.ant-timeline-item-tail {
+  border-inline-start-color: rgba(0, 0, 0, 0.06) !important;
+}

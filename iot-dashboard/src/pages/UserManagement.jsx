@@ -3,6 +3,7 @@ import {
   Tabs,
   Form,
   Input,
+  InputNumber,
   Select,
   Button,
   Table,
@@ -10,11 +11,13 @@ import {
   message,
   Space,
   Typography,
+  Modal,
 } from "antd";
 import {
   UserOutlined,
   LockOutlined,
-  safetyCertificateOutlined,
+  SafetyCertificateOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import api from "../services/api";
 
@@ -25,6 +28,10 @@ const { Option } = Select;
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [editPlanModalOpen, setEditPlanModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editPlanLoading, setEditPlanLoading] = useState(false);
+  const [editPlanForm] = Form.useForm();
 
   // Fetch Users
   const fetchUsers = async () => {
@@ -66,12 +73,46 @@ const UserManagement = () => {
   const onFinishAssignDevice = async (values) => {
     try {
       await api.assignDeviceToUser({
-        username: values.username, // Using username or userId based on your backend
+        userId: values.userId,
         imei: values.imei,
       });
       message.success("تم تعيين الجهاز للمستخدم بنجاح!");
+      fetchUsers();
     } catch (error) {
       message.error("فشل تعيين الجهاز: " + error.message);
+    }
+  };
+
+  const openEditPlanModal = (user) => {
+    setEditingUser(user);
+    editPlanForm.setFieldsValue({
+      plan: user.plan || "BASIC",
+      maxDevices: user.maxDevices ?? 5,
+    });
+    setEditPlanModalOpen(true);
+  };
+
+  const closeEditPlanModal = () => {
+    setEditPlanModalOpen(false);
+    setEditingUser(null);
+    editPlanForm.resetFields();
+  };
+
+  const onFinishEditPlan = async (values) => {
+    if (!editingUser) return;
+    try {
+      setEditPlanLoading(true);
+      await api.updateUserPlan(editingUser.id, {
+        plan: values.plan,
+        maxDevices: values.maxDevices,
+      });
+      message.success("تم تحديث الباقة بنجاح");
+      closeEditPlanModal();
+      fetchUsers();
+    } catch (error) {
+      message.error("فشل تحديث الباقة: " + error.message);
+    } finally {
+      setEditPlanLoading(false);
     }
   };
 
@@ -80,6 +121,7 @@ const UserManagement = () => {
       title: "معرف المستخدم",
       dataIndex: "id",
       key: "id",
+      width: 100,
     },
     {
       title: "اسم المستخدم",
@@ -92,9 +134,41 @@ const UserManagement = () => {
       key: "role",
     },
     {
+      title: "الباقة",
+      dataIndex: "plan",
+      key: "plan",
+      render: (plan) => plan || "BASIC",
+    },
+    {
+      title: "أقصى أجهزة",
+      dataIndex: "maxDevices",
+      key: "maxDevices",
+      render: (max) => max ?? 5,
+    },
+    {
+      title: "الأجهزة الحالية",
+      dataIndex: "deviceCount",
+      key: "deviceCount",
+      render: (c) => c ?? 0,
+    },
+    {
       title: "تاريخ الإنشاء",
       dataIndex: "createdAt",
       key: "createdAt",
+    },
+    {
+      title: "إجراءات",
+      key: "actions",
+      render: (_, record) => (
+        <Button
+          type="link"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={() => openEditPlanModal(record)}
+        >
+          تعديل الباقة
+        </Button>
+      ),
     },
   ];
 
@@ -174,14 +248,13 @@ const UserManagement = () => {
               style={{ maxWidth: 600 }}
             >
               <Form.Item
-                name="username"
+                name="userId"
                 label="اختر المستخدم"
                 rules={[{ required: true, message: "يرجى اختيار المستخدم" }]}
               >
-                {/* Dynamically populate users if available, else plain input */}
                 <Select placeholder="اختر مستخدم" loading={loading}>
                   {users.map((u) => (
-                    <Option key={u.id} value={u.username}>
+                    <Option key={u.id} value={u.id}>
                       {u.username} ({u.role})
                     </Option>
                   ))}
@@ -205,6 +278,49 @@ const UserManagement = () => {
           </TabPane>
         </Tabs>
       </Card>
+
+      <Modal
+        title="تعديل الباقة"
+        open={editPlanModalOpen}
+        onCancel={closeEditPlanModal}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form
+          form={editPlanForm}
+          layout="vertical"
+          onFinish={onFinishEditPlan}
+        >
+          <Form.Item
+            name="plan"
+            label="الباقة"
+            rules={[{ required: true, message: "اختر الباقة" }]}
+          >
+            <Select>
+              <Option value="BASIC">BASIC</Option>
+              <Option value="PRO">PRO</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="maxDevices"
+            label="أقصى عدد أجهزة"
+            rules={[
+              { required: true, message: "أدخل العدد" },
+              { type: "number", min: 1, message: "الحد الأدنى 1" },
+            ]}
+          >
+            <InputNumber min={1} integer style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button onClick={closeEditPlanModal}>إلغاء</Button>
+              <Button type="primary" htmlType="submit" loading={editPlanLoading}>
+                حفظ
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

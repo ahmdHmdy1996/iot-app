@@ -1,10 +1,25 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import adminRoutes from "./routes/admin.js";
-import apiRoutes from "./routes/api.js";
-import authRoutes from "./routes/auth.js";
-import externalRoutes from "./routes/external.js"; // New External Routes
+
+// Route modules
+import authRoutes from "./routes/auth.routes.js";
+import superAdminRoutes from "./routes/superAdmin.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
+import deviceRoutes from "./routes/device.routes.js";
+import userRoutes from "./routes/user.routes.js";
+import usersRoutes from "./routes/users.routes.js";
+import readingRoutes from "./routes/reading.routes.js";
+import alertRoutes from "./routes/alert.routes.js";
+import dashboardRoutes from "./routes/dashboard.routes.js";
+import auditReportRoutes from "./routes/auditReport.routes.js";
+import externalRoutes from "./routes/external.routes.js";
+
+// Middlewares
+import {
+  notFoundHandler,
+  globalErrorHandler,
+} from "./middlewares/error.middleware.js";
 
 // Load environment variables
 dotenv.config();
@@ -16,17 +31,26 @@ app.use(cors()); // Allow all origins (temp fix for production)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging
+// HTTP request logger (before all routes)
 app.use((req, res, next) => {
-  console.log(`[HTTP] ${req.method} ${req.path}`);
+  const url = req.originalUrl || req.url || req.path;
+  const time = new Date().toISOString();
+  console.log(`[HTTP] ${req.method} ${url} - ${time}`);
   next();
 });
 
-// Routes
+// Routes (order matters: more specific paths first)
 app.use("/auth", authRoutes);
-app.use("/admin", adminRoutes); // Middleware is applied inside the router file
-app.use("/api/external", externalRoutes); // New external API path
-app.use("/api", apiRoutes); // User API (protected by JWT inside router)
+app.use("/admin", adminRoutes);
+app.use("/api/admin", superAdminRoutes);
+app.use("/api/external", externalRoutes);
+app.use("/api/my-devices", deviceRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/users", usersRoutes);
+app.use("/api/readings", readingRoutes);
+app.use("/api/alerts", alertRoutes);
+app.use("/api/audit-report", auditReportRoutes);
+app.use("/api/devices", dashboardRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -38,20 +62,9 @@ app.get("/health", (req, res) => {
 });
 
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Endpoint not found",
-  });
-});
+app.use(notFoundHandler);
 
 // Global Error Handler
-app.use((err, req, res, next) => {
-  console.error("Global Error:", err);
-  res.status(500).json({
-    success: false,
-    message: "Internal server error",
-  });
-});
+app.use(globalErrorHandler);
 
 export default app;

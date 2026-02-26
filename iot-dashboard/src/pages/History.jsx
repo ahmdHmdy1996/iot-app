@@ -191,7 +191,7 @@ const History = () => {
     return (
       <Layout style={{ minHeight: "100vh", padding: 24 }}>
         <Content style={{ textAlign: "center", paddingTop: 100 }}>
-          <Spin size="large" tip="جاري تحميل الأجهزة..." />
+          <Spin size="large" />
         </Content>
       </Layout>
     );

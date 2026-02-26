@@ -53,6 +53,15 @@ class ApiService {
   }
 
   /**
+   * Register a new CLIENT user
+   * @param {Object} data - { username, password }
+   * @returns {Promise<Object>} { success, token, user }
+   */
+  async register(data) {
+    return await this.client.post("/auth/register", data);
+  }
+
+  /**
    * Get Devices (Context-aware based on Role)
    * Check localStorage for user role
    * @returns {Promise<Object>} { success, data: [...] }
@@ -91,13 +100,27 @@ class ApiService {
    * @param {number} limit
    */
   async getHistory(imei, limit = 50) {
-    // The backend route is /api/readings/:imei?limit=X
-    // But looking at previous api.js, getHistory was /api/readings/history (legacy)
-    // New backend refactor created: GET /api/readings/:imei
-    // So we should use that.
     return await this.client.get(`/api/readings/${imei}`, {
       params: { limit },
     });
+  }
+
+  /**
+   * Get daily stats (max, min, avg temperature) for the current day (backend aggregates all readings for today).
+   * @param {string} imei
+   * @returns {Promise<{ success: boolean, stats: { maxTemp, minTemp, avgTemp } }>}
+   */
+  async getDeviceStats(imei) {
+    return await this.client.get(`/api/devices/${imei}/stats`);
+  }
+
+  /**
+   * Get device dashboard: device meta, current reading, daily stats, and chart data in one response.
+   * @param {string} imei
+   * @returns {Promise<{ success: boolean, device, currentReading, dailyStats, chartData }>}
+   */
+  async getDeviceDashboard(imei) {
+    return await this.client.get(`/api/devices/${imei}/dashboard`);
   }
 
   // Legacy support for Stats if needed, or remove if unused.
@@ -114,6 +137,48 @@ class ApiService {
    */
   async getUsers() {
     return await this.client.get("/admin/users");
+  }
+
+  /**
+   * Super Admin: Get all users (GET /api/admin/users, includes _count.devices)
+   */
+  async getAllUsers() {
+    return await this.client.get("/api/admin/users");
+  }
+
+  /**
+   * Super Admin: Get all devices in the whole system (GET /api/admin/devices)
+   */
+  async getAllSystemDevices() {
+    return await this.client.get("/api/admin/devices");
+  }
+
+  /**
+   * Super Admin: Get aggregated system stats (GET /api/admin/stats)
+   */
+  async getSystemStats() {
+    return await this.client.get("/api/admin/stats");
+  }
+
+  /**
+   * Super Admin: Create user (POST /api/admin/users)
+   */
+  async createUserSuperAdmin(data) {
+    return await this.client.post("/api/admin/users", data);
+  }
+
+  /**
+   * Super Admin: Update user (PATCH /api/admin/users/:id)
+   */
+  async updateUser(id, data) {
+    return await this.client.patch(`/api/admin/users/${id}`, data);
+  }
+
+  /**
+   * Super Admin: Delete user (DELETE /api/admin/users/:id)
+   */
+  async deleteUser(id) {
+    return await this.client.delete(`/api/admin/users/${id}`);
   }
 
   /**
@@ -139,12 +204,128 @@ class ApiService {
   }
 
   /**
+   * Client: Add my device (self-service, enforces maxDevices)
+   */
+  async addMyDevice(data) {
+    return await this.client.post("/api/my-devices/add", data);
+  }
+
+  /**
+   * Client: Update own device (name, minTemp, maxTemp, calibrationOffset, isActive)
+   */
+  async updateMyDevice(imei, data) {
+    return await this.client.patch(`/api/my-devices/${imei}`, data);
+  }
+
+  /**
+   * Client: Delete own device
+   */
+  async deleteMyDevice(imei) {
+    return await this.client.delete(`/api/my-devices/${imei}`);
+  }
+
+  /**
+   * Admin: Update Device (minTemp, maxTemp, calibrationOffset, name, isActive)
+   */
+  async updateDevice(imei, data) {
+    return await this.client.patch(`/admin/devices/${imei}`, data);
+  }
+
+  /**
+   * Admin: Delete device
+   */
+  async deleteDevice(imei) {
+    return await this.client.delete(`/admin/devices/${imei}`);
+  }
+
+  /**
+   * Get current user's settings (for loading the Settings form)
+   * Returns plan, maxDevices, deviceCount, apiToken, and notification prefs
+   */
+  async getCurrentUserSettings() {
+    return await this.client.get("/api/user/settings");
+  }
+
+  /**
+   * Generate a new API token for the current user (external integrations)
+   * @returns {Promise<{ success: boolean, apiToken: string }>}
+   */
+  async generateApiToken() {
+    return await this.client.post("/api/user/generate-token");
+  }
+
+  /**
+   * Update current user's settings (webhook, alert email/WhatsApp and toggles)
+   */
+  async updateUserSettings(data) {
+    return await this.client.put("/api/user/settings", data);
+  }
+
+  /**
+   * Client: Get own profile (username, plan, alertEmail)
+   */
+  async getProfile() {
+    return await this.client.get("/api/users/me");
+  }
+
+  /**
+   * Client: Update own profile (alertEmail, password)
+   */
+  async updateProfile(data) {
+    return await this.client.patch("/api/users/me", data);
+  }
+
+  /**
+   * Get alert log history for a device
+   */
+  async getAlerts(imei, limit = 50) {
+    return await this.client.get(`/api/alerts/${imei}`, {
+      params: { limit },
+    });
+  }
+
+  /**
+   * Get audit report for a device (readings + alerts in date range)
+   */
+  async getAuditReport(imei, from, to) {
+    return await this.client.get(`/api/audit-report/${imei}`, {
+      params: {
+        from: from instanceof Date ? from.toISOString() : from,
+        to: to instanceof Date ? to.toISOString() : to,
+      },
+    });
+  }
+
+  /**
    * Admin: Assign Device (Legacy naming, maybe same endpoint?)
    * The user request said: POST /admin/assign-device
    * So I will use assignDeviceToUser for that.
    */
   async assignDevice(data) {
     return await this.client.post("/admin/devices/assign", data);
+  }
+
+  /**
+   * Admin: Update a user's plan and/or maxDevices
+   * @param {number} userId
+   * @param {{ plan?: 'BASIC'|'PRO', maxDevices?: number }} data
+   */
+  async updateUserPlan(userId, data) {
+    return await this.client.patch(`/admin/users/${userId}/plan`, data);
+  }
+
+  /**
+   * Super Admin: Get system-wide settings (GET /api/admin/settings)
+   */
+  async getSystemSettings() {
+    return await this.client.get("/api/admin/settings");
+  }
+
+  /**
+   * Super Admin: Update system-wide settings (PATCH /api/admin/settings)
+   */
+  async updateSystemSettings(data) {
+    return await this.client.patch("/api/admin/settings", data);
   }
 }
 

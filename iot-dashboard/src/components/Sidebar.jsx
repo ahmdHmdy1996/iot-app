@@ -1,95 +1,95 @@
 import React from "react";
-import { Layout, Menu } from "antd";
-import {
-  DashboardOutlined,
-  DesktopOutlined,
-  SafetyCertificateOutlined,
-  UserOutlined,
-  LogoutOutlined,
-} from "@ant-design/icons";
 import { useNavigate, useLocation } from "react-router-dom";
-import { AUTH_TOKEN_KEY } from "../config/constants";
-
-const { Sider } = Layout;
+import {
+  LayoutDashboard,
+  MonitorSmartphone,
+  FileText,
+  Settings,
+  Users,
+  Server,
+} from "lucide-react";
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const currentPath = location.pathname;
 
-  // Get User Role
-  const userStr = localStorage.getItem("user");
-  let role = "CLIENT";
-  if (userStr) {
+  const user = (() => {
     try {
-      const u = JSON.parse(userStr);
-      role = u.role || "CLIENT";
+      return JSON.parse(localStorage.getItem("user") || "{}");
     } catch (e) {
-      /* ignore */
+      return {};
     }
-  }
+  })();
+  const role = user.role || "CLIENT";
+  const isSuperAdmin = role === "SUPER_ADMIN";
 
-  // Menu Items Config
-  const items = [];
+  const superAdminItems = [
+    { path: "/super-admin", label: "نظرة عامة", icon: LayoutDashboard },
+    { path: "/super-admin/clients", label: "إدارة العملاء", icon: Users },
+    { path: "/super-admin/devices", label: "جميع الأجهزة", icon: Server },
+    { path: "/super-admin/settings", label: "إعدادات النظام", icon: Settings },
+  ];
 
-  // Common Items
-  // items.push({ key: "/", icon: <DashboardOutlined />, label: "المراقبة الحية" });
-
-  if (role === "ADMIN") {
-    items.push(
-      { key: "/devices", icon: <DesktopOutlined />, label: "إدارة الأجهزة" },
-      {
-        key: "/admin/users",
-        icon: <UserOutlined />,
-        label: "إدارة المستخدمين",
-      },
-    );
-  } else {
-    // Client Items
-    items.push(
-      { key: "/", icon: <DashboardOutlined />, label: "لوحة التحكم" }, // Live Monitor
-      { key: "/devices", icon: <DesktopOutlined />, label: "أجهزتي" },
-      // { key: "/history", icon: <HistoryOutlined />, label: "السجل" }
-    );
-  }
-
-  // Logout (Bottom)
-  items.push({ type: "divider" });
-  items.push({
-    key: "logout",
-    icon: <LogoutOutlined />,
-    label: "تسجيل الخروج",
-    danger: true,
-  });
-
-  const handleMenuClick = ({ key }) => {
-    if (key === "logout") {
-      localStorage.removeItem(AUTH_TOKEN_KEY);
-      localStorage.removeItem("user");
-      navigate("/login");
+  const baseItems = [
+    { path: "/", label: "لوحة التحكم", icon: LayoutDashboard },
+  ];
+  if (!isSuperAdmin) {
+    if (role === "ADMIN") {
+      baseItems.push(
+        { path: "/devices", label: "إدارة الأجهزة", icon: MonitorSmartphone },
+        { path: "/admin/users", label: "إدارة المستخدمين", icon: Users }
+      );
     } else {
-      navigate(key);
+      baseItems.push({ path: "/devices", label: "أجهزتي", icon: MonitorSmartphone });
     }
-  };
+    baseItems.push(
+      { path: "/audit", label: "سجل التفتيش الصحي", icon: FileText },
+      { path: "/settings", label: "الإعدادات", icon: Settings }
+    );
+  }
+
+  const navItems = isSuperAdmin ? superAdminItems : baseItems;
 
   return (
-    <Sider
-      width={250}
-      style={{ background: "#fff" }}
-      breakpoint="lg"
-      collapsedWidth="0"
+    <aside
+      className="fixed top-0 right-0 w-64 h-screen bg-white border-l border-slate-200 flex flex-col z-20"
+      aria-label="Sidebar"
     >
-      <div style={{ padding: "16px", textAlign: "center", fontWeight: "bold" }}>
-        مرحباً، {role === "ADMIN" ? "المدير" : "العميل"}
+      {/* Logo area - pure white with typography */}
+      <div className="shrink-0 p-6 bg-white border-b border-slate-100">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xl font-semibold tracking-tight text-slate-800">
+            IoT مراقبة
+          </span>
+          <span className="text-xs font-medium text-slate-500 tracking-wide">
+            درجات الحرارة
+          </span>
+        </div>
       </div>
-      <Menu
-        mode="inline"
-        selectedKeys={[currentPath]}
-        items={items}
-        onClick={handleMenuClick}
-        style={{ height: "100%", borderLeft: 0 }}
-      />
-    </Sider>
+
+      <nav className="flex-1 p-3 overflow-y-auto">
+        {navItems.map(({ path, label, icon: Icon }) => {
+          const isActive = location.pathname === path;
+          return (
+            <button
+              key={path}
+              type="button"
+              onClick={() => navigate(path)}
+              className={`
+                w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg mx-2 mb-1 transition-colors
+                ${isActive
+                  ? "bg-blue-50 text-blue-700"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }
+              `}
+            >
+              <Icon className="h-5 w-5 shrink-0" />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
   );
 };
 

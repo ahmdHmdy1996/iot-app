@@ -7,18 +7,68 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Subscription tier for plan limits
+enum PlanType {
+  BASIC
+  PRO
+}
+
+// Type of alert for AlertLog (temperature bounds or offline)
+enum AlertType {
+  TEMPERATURE_HIGH
+  TEMPERATURE_LOW
+  OFFLINE
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  role      String   @default("CLIENT") // "ADMIN", "CLIENT"
+  createdAt DateTime @default(now())
+
+  // Subscription & limits
+  plan       PlanType @default(BASIC)
+  maxDevices Int      @default(5) // BASIC default; PRO can have higher
+
+  // Notification preferences
+  alertEmail          String?  // email for alerts
+  alertEmailEnabled   Boolean  @default(true)
+  alertWhatsApp       String?  // phone number for WhatsApp alerts
+  alertWhatsAppEnabled Boolean @default(false)
+
+  // API & webhook (Cater Flow / external systems)
+  apiKey     String?  @unique @map("api_token") // Master API key for service-to-service auth (Caterflow)
+  webhookUrl String?  // POST real-time temp updates and alerts here
+
+  devices   Device[]
+
+  @@map("users")
+}
+
 model Device {
   imei      String    @id
   name      String?
-  apiKey    String    @unique @default(uuid()) // Kept for legacy/hardware auth if needed
+  apiKey    String    @unique @default(uuid())
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
 
-  // Relation to User (Owner)
   userId    Int?
-  user      User?     @relation(fields: [userId], references: [id])
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  readings Reading[]
+  // Alert thresholds (used to trigger alerts and validate readings)
+  minTemp Float?
+  maxTemp Float?
+
+  // Calibration: applied to raw sensor value (e.g. reading + calibrationOffset)
+  calibrationOffset Float @default(0)
+
+  // Status
+  batteryLevel Float?  // 0–100 or null if unknown
+  isOffline    Boolean @default(false)
+
+  readings  Reading[]
+  alertLogs AlertLog[]
 
   @@map("devices")
 }
@@ -38,14 +88,32 @@ model Reading {
   @@map("readings")
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  password  String
-  role      String   @default("CLIENT") // "ADMIN", "CLIENT"
-  createdAt DateTime @default(now())
+model AlertLog {
+  id         Int       @id @default(autoincrement())
+  alertType  AlertType // TEMPERATURE_HIGH | TEMPERATURE_LOW | OFFLINE
+  message    String    // e.g. "Temperature exceeded max (35°C)", "Device went offline"
+  timestamp  DateTime  @default(now())
+  resolved   Boolean   @default(false)
+  deviceImei String
 
-  devices   Device[]
+  device Device @relation(fields: [deviceImei], references: [imei], onDelete: Cascade)
 
-  @@map("users")
+  @@index([deviceImei, timestamp(sort: Desc)])
+  @@map("alert_logs")
+}
+
+model SystemSettings {
+  id              Int      @id @default(1)
+  platformName    String   @default("IoT Monitor Pro")
+  supportEmail    String   @default("support@iotmonitor.com")
+  timezone        String   @default("Asia/Riyadh")
+  smtpHost        String?
+  smtpPort        Int?
+  smtpUser        String?
+  smtpPass        String?
+  retentionDays   Int      @default(90)
+  maintenanceMode Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  @@map("system_settings")
 }

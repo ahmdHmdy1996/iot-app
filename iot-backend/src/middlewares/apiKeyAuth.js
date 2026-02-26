@@ -1,4 +1,4 @@
-import prisma from "../prisma.js";
+import prisma from "../config/db.js";
 
 /**
  * API Key Authentication Middleware

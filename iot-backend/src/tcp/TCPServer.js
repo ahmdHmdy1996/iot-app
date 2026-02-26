@@ -1,7 +1,9 @@
 import net from "net";
 import moment from "moment";
-import prisma from "../prisma.js";
+import prisma from "../config/db.js";
 import { parseWf501Packet, isValidWf501Frame } from "./HexParser.js";
+import { sendWebhook } from "../utils/webhook.js";
+import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
 
 /**
  * TCP Server for WF501 IoT Devices
@@ -47,7 +49,7 @@ class TCPServer {
     });
 
     this.server.listen(this.port, () => {
-      console.log(`[TCP] Server listening on port ${this.port}`);
+      console.log(`[TCP] TCP Server running on port ${this.port}`);
     });
 
     this.server.on("error", (error) => {
@@ -203,9 +205,10 @@ class TCPServer {
           packetIndex: packet.packetIndex,
         });
 
-        // Verify device exists in database
+        // Fetch device with calibration, thresholds, and user (for webhookUrl)
         const device = await prisma.device.findUnique({
           where: { imei: packet.imei },
+          include: { user: true },
         });
 
         if (!device) {
@@ -220,11 +223,28 @@ class TCPServer {
 
         console.log(`[TCP] Device verified: ${device.name || device.imei}`);
 
-        // Save reading to database
-        await prisma.reading.create({
+        // Apply calibration: finalTemperature = raw + offset
+        const rawTemp = packet.temperatureC ?? 0;
+        const calibrationOffset = device.calibrationOffset ?? 0;
+        const finalTemperature = rawTemp + calibrationOffset;
+
+        // Update device status: online and battery level from packet
+        await prisma.device.update({
+          where: { imei: packet.imei },
+          data: {
+            isOffline: false,
+            batteryLevel:
+              packet.batteryPercent != null
+                ? Number(packet.batteryPercent)
+                : null,
+          },
+        });
+
+        // Save reading with calibrated temperature
+        const readingRecord = await prisma.reading.create({
           data: {
             deviceImei: packet.imei,
-            temperature: packet.temperatureC ?? 0,
+            temperature: finalTemperature,
             humidity: packet.humidityRh ?? undefined,
             voltage: packet.batteryVolts ?? undefined,
             packetIndex: packet.packetIndex ?? undefined,
@@ -232,9 +252,97 @@ class TCPServer {
         });
         console.log("[TCP] Reading saved to database");
 
-        // Send ACK response - format packet index as 4-digit string
+        // Alert evaluation: compare finalTemperature to minTemp/maxTemp
+        const createdAlerts = [];
+        const minTemp = device.minTemp ?? null;
+        const maxTemp = device.maxTemp ?? null;
+
+        if (minTemp != null && finalTemperature < minTemp) {
+          const message = `Temperature below minimum (${finalTemperature}°C < ${minTemp}°C)`;
+          const alert = await prisma.alertLog.create({
+            data: {
+              deviceImei: packet.imei,
+              alertType: "TEMPERATURE_LOW",
+              message,
+              resolved: false,
+            },
+          });
+          createdAlerts.push(alert);
+          console.log("[TCP] Alert created: TEMPERATURE_LOW");
+        }
+        if (maxTemp != null && finalTemperature > maxTemp) {
+          const message = `Temperature above maximum (${finalTemperature}°C > ${maxTemp}°C)`;
+          const alert = await prisma.alertLog.create({
+            data: {
+              deviceImei: packet.imei,
+              alertType: "TEMPERATURE_HIGH",
+              message,
+              resolved: false,
+            },
+          });
+          createdAlerts.push(alert);
+          console.log("[TCP] Alert created: TEMPERATURE_HIGH");
+        }
+
+        // Notify user via email/WhatsApp when alerts were created (fire-and-forget)
+        if (createdAlerts.length > 0 && device.user) {
+          const deviceLabel = device.name || device.imei;
+          const alertSummary = createdAlerts.map((a) => a.message).join("; ");
+          const alertMessage = `🚨 نظام التنبيهات | Alert for Device [${deviceLabel}]: Temperature reached ${finalTemperature}°C. ${alertSummary}`;
+
+          if (device.user.alertEmailEnabled && device.user.alertEmail) {
+            sendEmailAlert(
+              device.user.alertEmail,
+              `IoT Alert: ${deviceLabel}`,
+              alertMessage,
+            ).catch((err) => {
+              console.warn(
+                "[TCP] Email alert error (non-fatal):",
+                err?.message,
+              );
+            });
+          }
+          if (device.user.alertWhatsAppEnabled && device.user.alertWhatsApp) {
+            sendWhatsAppAlert(device.user.alertWhatsApp, alertMessage).catch(
+              (err) => {
+                console.warn(
+                  "[TCP] WhatsApp alert error (non-fatal):",
+                  err?.message,
+                );
+              },
+            );
+          }
+        }
+
+        // Send ACK immediately (do not wait for webhook)
         const serial = packet.packetIndex.toString().padStart(4, "0");
         this.sendAckResponse(socket, serial);
+
+        // Fire-and-forget webhook: do not crash server or delay ACK
+        const webhookUrl = device.user?.webhookUrl;
+        if (webhookUrl) {
+          const payload = {
+            reading: {
+              id: readingRecord.id,
+              deviceImei: readingRecord.deviceImei,
+              temperature: readingRecord.temperature,
+              humidity: readingRecord.humidity ?? undefined,
+              voltage: readingRecord.voltage ?? undefined,
+              packetIndex: readingRecord.packetIndex ?? undefined,
+              timestamp: readingRecord.timestamp.toISOString(),
+            },
+            alerts: createdAlerts.map((a) => ({
+              id: a.id,
+              alertType: a.alertType,
+              message: a.message,
+              timestamp: a.timestamp.toISOString(),
+              resolved: a.resolved,
+            })),
+          };
+          sendWebhook(webhookUrl, payload).catch((err) => {
+            console.warn("[TCP] Webhook error (non-fatal):", err?.message);
+          });
+        }
       }
     } catch (error) {
       console.error("[TCP] Error processing data:", error);
