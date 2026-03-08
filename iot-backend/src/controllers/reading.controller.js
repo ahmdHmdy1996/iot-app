@@ -5,12 +5,14 @@ import * as readingService from "../services/reading.service.js";
  */
 export async function getReadings(req, res) {
   try {
-    const { limit = 50 } = req.query;
+    const { limit = 50, startDate, endDate } = req.query;
     const result = await readingService.getReadings(
       req.params.imei,
       req.user.id,
       req.user.role,
       limit,
+      startDate || null,
+      endDate || null,
     );
     res.json({ success: true, ...result });
   } catch (error) {

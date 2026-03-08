@@ -163,14 +163,20 @@ export async function deleteUser(id) {
 
 /**
  * Get the authenticated user's profile.
+ * For ADMINs: deviceCount = total devices in the system (they manage inventory).
+ * For CLIENTs: deviceCount = devices assigned to them.
  */
 export async function getUserProfile(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       username: true,
+      role: true,
       plan: true,
+      maxDevices: true,
       alertEmail: true,
+      alertWhatsApp: true,
+      _count: { select: { devices: true } },
     },
   });
   if (!user) {
@@ -178,18 +184,32 @@ export async function getUserProfile(userId) {
     err.statusCode = 404;
     throw err;
   }
-  return user;
+  const { _count, ...rest } = user;
+  // ADMINs see total system device count (inventory + assigned); CLIENTs see their own
+  const deviceCount =
+    user.role === "ADMIN" ? await prisma.device.count() : _count.devices;
+  return { ...rest, deviceCount };
 }
 
 /**
- * Update the authenticated user's profile (alertEmail, password).
+ * Update the authenticated user's profile (alertWhatsApp, alertEmail, password).
  */
-export async function updateUserProfile(userId, { alertEmail, password }) {
+export async function updateUserProfile(
+  userId,
+  { alertEmail, alertWhatsApp, password },
+) {
   const data = {};
 
   if (alertEmail !== undefined) {
     data.alertEmail =
       alertEmail === null || alertEmail === "" ? null : String(alertEmail);
+  }
+
+  if (alertWhatsApp !== undefined) {
+    data.alertWhatsApp =
+      alertWhatsApp === null || alertWhatsApp === ""
+        ? null
+        : String(alertWhatsApp);
   }
 
   if (password !== undefined && String(password).trim()) {
@@ -207,12 +227,20 @@ export async function updateUserProfile(userId, { alertEmail, password }) {
     data,
     select: {
       username: true,
+      role: true,
       plan: true,
+      maxDevices: true,
       alertEmail: true,
+      alertWhatsApp: true,
+      _count: { select: { devices: true } },
     },
   });
 
-  return user;
+  const { _count, ...rest } = user;
+  const deviceCount =
+    user.role === "ADMIN" ? await prisma.device.count() : _count.devices;
+
+  return { ...rest, deviceCount };
 }
 
 // ─── Admin User Management (ADMIN role) ───

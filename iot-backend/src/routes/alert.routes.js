@@ -14,4 +14,7 @@ router.use(authorizeRole(["CLIENT", "ADMIN"]));
 // GET /api/alerts/:imei
 router.get("/:imei", alertController.getAlerts);
 
+// DELETE /api/alerts/:imei  – clear all alerts for a device
+router.delete("/:imei", alertController.clearAlerts);
+
 export default router;

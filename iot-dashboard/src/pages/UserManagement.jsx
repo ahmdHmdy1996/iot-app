@@ -1,326 +1,556 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  Tabs,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  Button,
+  Plus,
+  Trash2,
+  Pencil,
+  Loader2,
+  RefreshCw,
+  AlertTriangle,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
   Table,
-  Card,
-  message,
-  Space,
-  Typography,
-  Modal,
-} from "antd";
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
-  UserOutlined,
-  LockOutlined,
-  SafetyCertificateOutlined,
-  EditOutlined,
-} from "@ant-design/icons";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import api from "../services/api";
-
-const { TabPane } = Tabs;
-const { Title } = Typography;
-const { Option } = Select;
+import { useTranslation } from "react-i18next";
 
 const UserManagement = () => {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [editPlanModalOpen, setEditPlanModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
-  const [editPlanLoading, setEditPlanLoading] = useState(false);
-  const [editPlanForm] = Form.useForm();
+  const { t, i18n } = useTranslation();
+  const isRtl = i18n.language === "ar";
+  const dateLang = i18n.language === "ar" ? "ar-EG" : "en-US";
 
-  // Fetch Users
-  const fetchUsers = async () => {
-    setLoading(true);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Add User dialog
+  const [openAdd, setOpenAdd] = useState(false);
+  const [addUsername, setAddUsername] = useState("");
+  const [addPassword, setAddPassword] = useState("");
+  const [addRole, setAddRole] = useState("CLIENT");
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState("");
+
+  // Edit Plan dialog
+  const [openEditPlan, setOpenEditPlan] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editPlan, setEditPlan] = useState("BASIC");
+  const [editMaxDevices, setEditMaxDevices] = useState("");
+  const [editPlanLoading, setEditPlanLoading] = useState(false);
+  const [editPlanError, setEditPlanError] = useState("");
+
+  // Delete confirmation dialog
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const fetchUsers = useCallback(async () => {
     try {
+      setLoading(true);
       const result = await api.getUsers();
-      // Handle response structure
       if (Array.isArray(result)) {
         setUsers(result);
-      } else if (result.data && Array.isArray(result.data)) {
+      } else if (result?.data && Array.isArray(result.data)) {
         setUsers(result.data);
       } else {
         setUsers([]);
       }
     } catch (error) {
       console.error("Failed to fetch users:", error);
-      // message.error("فشل في جلب قائمة المستخدمين");
+      setUsers([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
 
-  // Create User Form Handler
-  const onFinishCreateUser = async (values) => {
-    try {
-      await api.createUser(values);
-      message.success("تم إنشاء المستخدم بنجاح!");
-      fetchUsers(); // Refresh list
-    } catch (error) {
-      message.error("فشل إنشاء المستخدم: " + error.message);
-    }
+  // ─── Add User ───
+  const closeAddDialog = () => {
+    setOpenAdd(false);
+    setAddError("");
+    setAddUsername("");
+    setAddPassword("");
+    setAddRole("CLIENT");
   };
 
-  // Assign Device Form Handler
-  const onFinishAssignDevice = async (values) => {
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    setAddError("");
+    if (!addUsername.trim() || !addPassword.trim()) {
+      setAddError("اسم المستخدم وكلمة المرور مطلوبان");
+      return;
+    }
     try {
-      await api.assignDeviceToUser({
-        userId: values.userId,
-        imei: values.imei,
+      setAddLoading(true);
+      await api.createUser({
+        username: addUsername.trim(),
+        password: addPassword.trim(),
+        role: addRole,
       });
-      message.success("تم تعيين الجهاز للمستخدم بنجاح!");
-      fetchUsers();
-    } catch (error) {
-      message.error("فشل تعيين الجهاز: " + error.message);
+      closeAddDialog();
+      await fetchUsers();
+    } catch (err) {
+      setAddError(err.message || "فشل إنشاء المستخدم");
+    } finally {
+      setAddLoading(false);
     }
   };
 
-  const openEditPlanModal = (user) => {
+  // ─── Edit Plan ───
+  const openEditPlanDialog = (user) => {
     setEditingUser(user);
-    editPlanForm.setFieldsValue({
-      plan: user.plan || "BASIC",
-      maxDevices: user.maxDevices ?? 5,
-    });
-    setEditPlanModalOpen(true);
+    setEditPlan(user.plan || "BASIC");
+    setEditMaxDevices(String(user.maxDevices ?? 5));
+    setEditPlanError("");
+    setOpenEditPlan(true);
   };
 
-  const closeEditPlanModal = () => {
-    setEditPlanModalOpen(false);
+  const closeEditPlanDialog = () => {
+    setOpenEditPlan(false);
     setEditingUser(null);
-    editPlanForm.resetFields();
+    setEditPlanError("");
   };
 
-  const onFinishEditPlan = async (values) => {
+  const handleEditPlan = async (e) => {
+    e.preventDefault();
     if (!editingUser) return;
+    setEditPlanError("");
+    const maxDev = Number(editMaxDevices);
+    if (!editMaxDevices || isNaN(maxDev) || maxDev < 1) {
+      setEditPlanError("أقصى عدد أجهزة يجب أن يكون 1 على الأقل");
+      return;
+    }
     try {
       setEditPlanLoading(true);
       await api.updateUserPlan(editingUser.id, {
-        plan: values.plan,
-        maxDevices: values.maxDevices,
+        plan: editPlan,
+        maxDevices: maxDev,
       });
-      message.success("تم تحديث الباقة بنجاح");
-      closeEditPlanModal();
-      fetchUsers();
-    } catch (error) {
-      message.error("فشل تحديث الباقة: " + error.message);
+      closeEditPlanDialog();
+      await fetchUsers();
+    } catch (err) {
+      setEditPlanError(err.message || "فشل تحديث الباقة");
     } finally {
       setEditPlanLoading(false);
     }
   };
 
-  const columns = [
-    {
-      title: "معرف المستخدم",
-      dataIndex: "id",
-      key: "id",
-      width: 100,
-    },
-    {
-      title: "اسم المستخدم",
-      dataIndex: "username",
-      key: "username",
-    },
-    {
-      title: "الدور",
-      dataIndex: "role",
-      key: "role",
-    },
-    {
-      title: "الباقة",
-      dataIndex: "plan",
-      key: "plan",
-      render: (plan) => plan || "BASIC",
-    },
-    {
-      title: "أقصى أجهزة",
-      dataIndex: "maxDevices",
-      key: "maxDevices",
-      render: (max) => max ?? 5,
-    },
-    {
-      title: "الأجهزة الحالية",
-      dataIndex: "deviceCount",
-      key: "deviceCount",
-      render: (c) => c ?? 0,
-    },
-    {
-      title: "تاريخ الإنشاء",
-      dataIndex: "createdAt",
-      key: "createdAt",
-    },
-    {
-      title: "إجراءات",
-      key: "actions",
-      render: (_, record) => (
-        <Button
-          type="link"
-          size="small"
-          icon={<EditOutlined />}
-          onClick={() => openEditPlanModal(record)}
-        >
-          تعديل الباقة
-        </Button>
-      ),
-    },
-  ];
+  // ─── Delete User ───
+  const handleDeleteUser = async () => {
+    if (!deleteConfirmId) return;
+    try {
+      setDeleteLoading(true);
+      await api.deleteAdminUser(deleteConfirmId);
+      setDeleteConfirmId(null);
+      await fetchUsers();
+    } catch (err) {
+      console.error("Delete user failed:", err);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const deleteTargetUser = users.find((u) => u.id === deleteConfirmId);
 
   return (
-    <div style={{ padding: "24px" }}>
-      <Title level={2}>إدارة المستخدمين</Title>
+    <div
+      dir={isRtl ? "rtl" : "ltr"}
+      className={isRtl ? "text-right" : "text-left"}
+    >
+      {/* ── Header ── */}
+      <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            {t("users.title")}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">{t("users.subtitle")}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchUsers}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            {t("common.refresh")}
+          </Button>
+          <Button size="sm" onClick={() => setOpenAdd(true)}>
+            <Plus className="h-4 w-4" />
+            {t("users.add_btn")}
+          </Button>
+        </div>
+      </header>
 
-      <Card>
-        <Tabs defaultActiveKey="1">
-          {/* Tab 1: Users List */}
-          <TabPane tab="قائمة المستخدمين" key="1">
-            <Button onClick={fetchUsers} style={{ marginBottom: 16 }}>
-              تحديث القائمة
-            </Button>
-            <Table
-              dataSource={users}
-              columns={columns}
-              rowKey="id"
-              loading={loading}
-              locale={{ emptyText: "لا يوجد مستخدمين" }}
-            />
-          </TabPane>
+      {/* ── Users Table ── */}
+      <Card className="rounded-xl border-slate-100 bg-white shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-slate-900">
+            {t("users.list_title")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+              <Loader2 className="h-8 w-8 animate-spin mb-3" />
+              <p className="text-sm">{t("common.loading")}</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-slate-100">
+                  <TableHead
+                    className={`${isRtl ? "text-right" : "text-left"} font-medium text-slate-600`}
+                  >
+                    {t("users.col_user")}
+                  </TableHead>
+                  <TableHead
+                    className={`${isRtl ? "text-right" : "text-left"} font-medium text-slate-600`}
+                  >
+                    {t("users.col_role")}
+                  </TableHead>
+                  <TableHead
+                    className={`${isRtl ? "text-right" : "text-left"} font-medium text-slate-600`}
+                  >
+                    {t("users.col_plan")}
+                  </TableHead>
+                  <TableHead
+                    className={`${isRtl ? "text-right" : "text-left"} font-medium text-slate-600`}
+                  >
+                    {t("users.col_devices")}
+                  </TableHead>
+                  <TableHead
+                    className={`${isRtl ? "text-right" : "text-left"} font-medium text-slate-600`}
+                  >
+                    {t("users.col_created")}
+                  </TableHead>
+                  <TableHead className="text-center font-medium text-slate-600">
+                    {t("users.col_actions")}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="text-center py-12 text-slate-500"
+                    >
+                      {t("users.empty")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  users.map((user) => (
+                    <TableRow key={user.id} className="border-slate-100">
+                      {/* ── المستخدم ── */}
+                      <TableCell className={isRtl ? "text-right" : "text-left"}>
+                        <div>
+                          <p className="font-semibold text-slate-900">
+                            {user.username}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            #{user.id}
+                          </p>
+                        </div>
+                      </TableCell>
 
-          {/* Tab 2: Create User */}
-          <TabPane tab="إنشاء مستخدم جديد" key="2">
-            <Form
-              name="create_user"
-              layout="vertical"
-              onFinish={onFinishCreateUser}
-              style={{ maxWidth: 600 }}
-            >
-              <Form.Item
-                name="username"
-                label="اسم المستخدم"
-                rules={[{ required: true, message: "يرجى إدخال اسم المستخدم" }]}
-              >
-                <Input prefix={<UserOutlined />} placeholder="Username" />
-              </Form.Item>
+                      {/* ── الدور ── */}
+                      <TableCell className={isRtl ? "text-right" : "text-left"}>
+                        {user.role === "ADMIN" ? (
+                          <Badge className="bg-purple-100 text-purple-700 hover:bg-purple-100 border-0">
+                            {t("roles.ADMIN")}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-0">
+                            {t("roles.CLIENT")}
+                          </Badge>
+                        )}
+                      </TableCell>
 
-              <Form.Item
-                name="password"
-                label="كلمة المرو"
-                rules={[{ required: true, message: "يرجى إدخال كلمة المرور" }]}
-              >
-                <Input.Password
-                  prefix={<LockOutlined />}
-                  placeholder="Password"
-                />
-              </Form.Item>
+                      {/* ── الباقة ── */}
+                      <TableCell className={isRtl ? "text-right" : "text-left"}>
+                        <div>
+                          <p className="font-medium text-slate-800">
+                            {t("plans." + (user.plan || "BASIC"))}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {user.deviceCount ?? 0} / {user.maxDevices ?? 5}{" "}
+                            {t("users.devices_count")}
+                          </p>
+                        </div>
+                      </TableCell>
 
-              <Form.Item
-                name="role"
-                label="الدور"
-                initialValue="CLIENT"
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Option value="CLIENT">عميل (CLIENT)</Option>
-                  <Option value="ADMIN">مدير (ADMIN)</Option>
-                </Select>
-              </Form.Item>
+                      {/* ── الأجهزة ── */}
+                      <TableCell
+                        className={`${isRtl ? "text-right" : "text-left"} text-slate-700`}
+                      >
+                        {user.deviceCount ?? 0}
+                      </TableCell>
 
-              <Form.Item>
-                <Button type="primary" htmlType="submit">
-                  إنشاء المستخدم
-                </Button>
-              </Form.Item>
-            </Form>
-          </TabPane>
+                      {/* ── تاريخ الإنشاء ── */}
+                      <TableCell
+                        className={`${isRtl ? "text-right" : "text-left"} text-slate-500 text-sm`}
+                      >
+                        {user.createdAt
+                          ? new Date(user.createdAt).toLocaleDateString(
+                              dateLang,
+                            )
+                          : "—"}
+                      </TableCell>
 
-          {/* Tab 3: Assign Device */}
-          <TabPane tab="تعيين جهاز لمستخدم" key="3">
-            <Form
-              name="assign_device"
-              layout="vertical"
-              onFinish={onFinishAssignDevice}
-              style={{ maxWidth: 600 }}
-            >
-              <Form.Item
-                name="userId"
-                label="اختر المستخدم"
-                rules={[{ required: true, message: "يرجى اختيار المستخدم" }]}
-              >
-                <Select placeholder="اختر مستخدم" loading={loading}>
-                  {users.map((u) => (
-                    <Option key={u.id} value={u.id}>
-                      {u.username} ({u.role})
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-
-              <Form.Item
-                name="imei"
-                label="رقم الجهاز (IMEI)"
-                rules={[{ required: true, message: "يرجى إدخال IMEI" }]}
-              >
-                <Input placeholder="Device IMEI" />
-              </Form.Item>
-
-              <Form.Item>
-                <Button type="primary" htmlType="submit">
-                  تعيين الجهاز
-                </Button>
-              </Form.Item>
-            </Form>
-          </TabPane>
-        </Tabs>
+                      {/* ── الإجراءات ── */}
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("users.edit_plan_title")}
+                            onClick={() => openEditPlanDialog(user)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("common.delete")}
+                            onClick={() => setDeleteConfirmId(user.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
       </Card>
 
-      <Modal
-        title="تعديل الباقة"
-        open={editPlanModalOpen}
-        onCancel={closeEditPlanModal}
-        footer={null}
-        destroyOnHidden
-      >
-        <Form
-          form={editPlanForm}
-          layout="vertical"
-          onFinish={onFinishEditPlan}
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/*  Add User Dialog                                          */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      <Dialog open={openAdd} onOpenChange={(open) => !open && closeAddDialog()}>
+        <DialogContent
+          className="sm:max-w-md text-right"
+          dir={isRtl ? "rtl" : "ltr"}
         >
-          <Form.Item
-            name="plan"
-            label="الباقة"
-            rules={[{ required: true, message: "اختر الباقة" }]}
-          >
-            <Select>
-              <Option value="BASIC">BASIC</Option>
-              <Option value="PRO">PRO</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name="maxDevices"
-            label="أقصى عدد أجهزة"
-            rules={[
-              { required: true, message: "أدخل العدد" },
-              { type: "number", min: 1, message: "الحد الأدنى 1" },
-            ]}
-          >
-            <InputNumber min={1} integer style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button onClick={closeEditPlanModal}>إلغاء</Button>
-              <Button type="primary" htmlType="submit" loading={editPlanLoading}>
-                حفظ
+          <DialogHeader>
+            <DialogTitle>{t("users.add_title")}</DialogTitle>
+            <DialogDescription>{t("users.add_desc")}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddUser} className="space-y-4">
+            {addError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded-md">
+                {addError}
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="add-username">{t("users.label_username")}</Label>
+              <Input
+                id="add-username"
+                value={addUsername}
+                onChange={(e) => setAddUsername(e.target.value)}
+                placeholder={t("users.label_username")}
+                className={isRtl ? "text-right" : "text-left"}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-password">{t("users.label_password")}</Label>
+              <Input
+                id="add-password"
+                type="password"
+                value={addPassword}
+                onChange={(e) => setAddPassword(e.target.value)}
+                placeholder={t("users.label_password")}
+                className={isRtl ? "text-right" : "text-left"}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("users.label_role")}</Label>
+              <Select
+                value={addRole}
+                onValueChange={setAddRole}
+                dir={isRtl ? "rtl" : "ltr"}
+              >
+                <SelectTrigger
+                  className={`w-full ${isRtl ? "text-right" : "text-left"}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CLIENT">
+                    {t("users.option_client")}
+                  </SelectItem>
+                  <SelectItem value="ADMIN">
+                    {t("users.option_admin")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={closeAddDialog}>
+                {t("common.cancel")}
               </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
+              <Button type="submit" disabled={addLoading}>
+                {addLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t("common.add")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/*  Edit Plan Dialog                                         */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={openEditPlan}
+        onOpenChange={(open) => !open && closeEditPlanDialog()}
+      >
+        <DialogContent
+          className="sm:max-w-md text-right"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("users.edit_plan_title")}</DialogTitle>
+            <DialogDescription>
+              {editingUser && (
+                <span>
+                  {t("users.edit_plan_desc")} {editingUser.username}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditPlan} className="space-y-4">
+            {editPlanError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded-md">
+                {editPlanError}
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label>{t("users.label_plan")}</Label>
+              <Select
+                value={editPlan}
+                onValueChange={setEditPlan}
+                dir={isRtl ? "rtl" : "ltr"}
+              >
+                <SelectTrigger
+                  className={`w-full ${isRtl ? "text-right" : "text-left"}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BASIC">{t("plans.BASIC")}</SelectItem>
+                  <SelectItem value="PRO">{t("plans.PRO")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-max-devices">
+                {t("users.label_max_devices")}
+              </Label>
+              <Input
+                id="edit-max-devices"
+                type="number"
+                min={1}
+                value={editMaxDevices}
+                onChange={(e) => setEditMaxDevices(e.target.value)}
+                className={isRtl ? "text-right" : "text-left"}
+              />
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeEditPlanDialog}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={editPlanLoading}>
+                {editPlanLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {t("common.save_short")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/*  Delete Confirmation Dialog                               */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => !open && setDeleteConfirmId(null)}
+      >
+        <DialogContent
+          className="sm:max-w-sm text-right"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              {t("users.delete_title")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("users.delete_desc")}{" "}
+              <strong>{deleteTargetUser?.username}</strong>?{" "}
+              {t("common.cant_undo")}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmId(null)}
+              disabled={deleteLoading}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteUser}
+              disabled={deleteLoading}
+            >
+              {deleteLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t("common.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

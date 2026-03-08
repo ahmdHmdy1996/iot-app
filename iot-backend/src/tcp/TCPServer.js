@@ -228,15 +228,37 @@ class TCPServer {
         const calibrationOffset = device.calibrationOffset ?? 0;
         const finalTemperature = rawTemp + calibrationOffset;
 
-        // Update device status: online and battery level from packet
+        // ── Temperature alert state ──────────────────────────────────────────
+        const minTemp = device.minTemp ?? null;
+        const maxTemp = device.maxTemp ?? null;
+
+        let newTempState = "NORMAL";
+        if (maxTemp != null && finalTemperature > maxTemp) {
+          newTempState = "TEMPERATURE_HIGH";
+        } else if (minTemp != null && finalTemperature < minTemp) {
+          newTempState = "TEMPERATURE_LOW";
+        }
+
+        // ── Battery alert state ──────────────────────────────────────────────
+        const batteryPct =
+          packet.batteryPercent != null ? Number(packet.batteryPercent) : null;
+        let newBatteryState = "NORMAL";
+        if (batteryPct != null) {
+          if (batteryPct < 10) {
+            newBatteryState = "BATTERY_CRITICAL";
+          } else if (batteryPct < 20) {
+            newBatteryState = "BATTERY_LOW";
+          }
+        }
+
+        // Update device status: online, battery level, and alert states
         await prisma.device.update({
           where: { imei: packet.imei },
           data: {
             isOffline: false,
-            batteryLevel:
-              packet.batteryPercent != null
-                ? Number(packet.batteryPercent)
-                : null,
+            batteryLevel: batteryPct,
+            lastAlertStatus: newTempState,
+            lastBatteryStatus: newBatteryState,
           },
         });
 
@@ -252,36 +274,69 @@ class TCPServer {
         });
         console.log("[TCP] Reading saved to database");
 
-        // Alert evaluation: compare finalTemperature to minTemp/maxTemp
+        // ── Alert evaluation (state-transition: only fire on change) ─────────
         const createdAlerts = [];
-        const minTemp = device.minTemp ?? null;
-        const maxTemp = device.maxTemp ?? null;
 
-        if (minTemp != null && finalTemperature < minTemp) {
-          const message = `Temperature below minimum (${finalTemperature}°C < ${minTemp}°C)`;
-          const alert = await prisma.alertLog.create({
-            data: {
-              deviceImei: packet.imei,
-              alertType: "TEMPERATURE_LOW",
-              message,
-              resolved: false,
-            },
-          });
-          createdAlerts.push(alert);
-          console.log("[TCP] Alert created: TEMPERATURE_LOW");
+        // Temperature: fire only when state changes
+        if (newTempState !== device.lastAlertStatus) {
+          if (newTempState === "TEMPERATURE_HIGH") {
+            const message = `Temperature above maximum (${finalTemperature}°C > ${maxTemp}°C)`;
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "TEMPERATURE_HIGH",
+                message,
+                resolved: false,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log("[TCP] Alert created: TEMPERATURE_HIGH");
+          } else if (newTempState === "TEMPERATURE_LOW") {
+            const message = `Temperature below minimum (${finalTemperature}°C < ${minTemp}°C)`;
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "TEMPERATURE_LOW",
+                message,
+                resolved: false,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log("[TCP] Alert created: TEMPERATURE_LOW");
+          }
+          // NORMAL: state was reset – no alert needed, just status updated
         }
-        if (maxTemp != null && finalTemperature > maxTemp) {
-          const message = `Temperature above maximum (${finalTemperature}°C > ${maxTemp}°C)`;
-          const alert = await prisma.alertLog.create({
-            data: {
-              deviceImei: packet.imei,
-              alertType: "TEMPERATURE_HIGH",
-              message,
-              resolved: false,
-            },
-          });
-          createdAlerts.push(alert);
-          console.log("[TCP] Alert created: TEMPERATURE_HIGH");
+
+        // Battery: fire only when state changes and not NORMAL
+        if (
+          newBatteryState !== device.lastBatteryStatus &&
+          newBatteryState !== "NORMAL"
+        ) {
+          if (newBatteryState === "BATTERY_CRITICAL") {
+            const message = `Battery critical (${batteryPct}%)`;
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "BATTERY_CRITICAL",
+                message,
+                resolved: false,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log("[TCP] Alert created: BATTERY_CRITICAL");
+          } else if (newBatteryState === "BATTERY_LOW") {
+            const message = `Battery low (${batteryPct}%)`;
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "BATTERY_LOW",
+                message,
+                resolved: false,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log("[TCP] Alert created: BATTERY_LOW");
+          }
         }
 
         // Notify user via email/WhatsApp when alerts were created (fire-and-forget)

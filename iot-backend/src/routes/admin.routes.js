@@ -49,6 +49,18 @@ router.patch("/users/:id/plan", async (req, res) => {
   }
 });
 
+router.delete("/users/:id", async (req, res) => {
+  try {
+    await userService.deleteUser(Number(req.params.id));
+    res.json({ success: true, message: "User deleted" });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res
+      .status(error.statusCode || 500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+});
+
 // Devices
 router.post("/devices", deviceController.createAdminDevice);
 router.patch("/devices/:imei", deviceController.updateAdminDevice);

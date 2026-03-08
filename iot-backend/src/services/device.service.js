@@ -196,7 +196,7 @@ export async function deleteUserDevice(userId, imei) {
 // ─── Admin Devices (ADMIN role) ───
 
 /**
- * Admin creates a device (inventory).
+ * Admin creates a device (inventory). Optionally assign to a user and enforce maxDevices.
  */
 export async function createAdminDevice({
   imei,
@@ -204,6 +204,7 @@ export async function createAdminDevice({
   minTemp,
   maxTemp,
   calibrationOffset,
+  userId,
 }) {
   if (!imei) {
     const err = new Error("IMEI is required");
@@ -211,11 +212,33 @@ export async function createAdminDevice({
     throw err;
   }
 
+  // If a user is specified, validate existence and enforce device limit
+  if (userId != null && userId !== "") {
+    const uid = Number(userId);
+    const user = await prisma.user.findUnique({
+      where: { id: uid },
+      include: { _count: { select: { devices: true } } },
+    });
+    if (!user) {
+      const err = new Error("User not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (user._count.devices >= user.maxDevices) {
+      const err = new Error(
+        `User has reached their device limit (${user.maxDevices}). Upgrade plan or increase maxDevices.`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
   const data = {
     imei,
     name: name ?? undefined,
     isActive: true,
   };
+  if (userId != null && userId !== "") data.userId = Number(userId);
   if (minTemp != null && minTemp !== "") data.minTemp = Number(minTemp);
   if (maxTemp != null && maxTemp !== "") data.maxTemp = Number(maxTemp);
   if (calibrationOffset != null && calibrationOffset !== "")

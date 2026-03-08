@@ -7,10 +7,32 @@
 @layer base {
   body {
     @apply antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-      "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-      sans-serif, "Arabic UI Text", Tahoma;
+    font-family:
+      "Inter",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      "Roboto",
+      "Helvetica Neue",
+      sans-serif;
   }
+}
+
+/* Arabic: use Cairo for better readability */
+[lang="ar"] body,
+[lang="ar"] {
+  font-family: "Cairo", "Segoe UI", Tahoma, sans-serif;
+}
+
+/* English: use Inter */
+[lang="en"] body,
+[lang="en"] {
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 [dir="rtl"] {

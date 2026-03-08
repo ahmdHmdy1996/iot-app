@@ -5,6 +5,8 @@ import * as userService from "../services/user.service.js";
  */
 export async function getProfile(req, res) {
   try {
+    // Prevent stale reads — device counts must always be fresh
+    res.setHeader("Cache-Control", "no-store");
     const user = await userService.getUserProfile(req.user.id);
     res.json({ success: true, user });
   } catch (error) {

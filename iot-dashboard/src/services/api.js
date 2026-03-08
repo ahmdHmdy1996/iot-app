@@ -99,10 +99,18 @@ class ApiService {
    * @param {string} imei
    * @param {number} limit
    */
-  async getHistory(imei, limit = 50) {
-    return await this.client.get(`/api/readings/${imei}`, {
-      params: { limit },
-    });
+  async getHistory(
+    imei,
+    { limit = 50, startDate = null, endDate = null } = {},
+  ) {
+    const params = {};
+    if (startDate && endDate) {
+      params.startDate = startDate;
+      params.endDate = endDate;
+    } else {
+      params.limit = limit;
+    }
+    return await this.client.get(`/api/readings/${imei}`, { params });
   }
 
   /**
@@ -285,6 +293,13 @@ class ApiService {
   }
 
   /**
+   * Clear all alert logs for a device (DELETE /api/alerts/:imei)
+   */
+  async clearAlerts(imei) {
+    return await this.client.delete(`/api/alerts/${imei}`);
+  }
+
+  /**
    * Get audit report for a device (readings + alerts in date range)
    */
   async getAuditReport(imei, from, to) {
@@ -312,6 +327,14 @@ class ApiService {
    */
   async updateUserPlan(userId, data) {
     return await this.client.patch(`/admin/users/${userId}/plan`, data);
+  }
+
+  /**
+   * Admin: Delete a user by ID
+   * @param {number} id
+   */
+  async deleteAdminUser(id) {
+    return await this.client.delete(`/admin/users/${id}`);
   }
 
   /**

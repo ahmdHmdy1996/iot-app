@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Mail,
   Lock,
+  Phone,
 } from "lucide-react";
 import {
   Card,
@@ -21,8 +22,12 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import api from "@/services/api";
+import { useTranslation } from "react-i18next";
 
 const Settings = () => {
+  const { t, i18n } = useTranslation();
+  const isRtl = i18n.language === "ar";
+
   // ── Loading & feedback ──
   const [isLoading, setIsLoading] = useState(true);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -31,12 +36,33 @@ const Settings = () => {
 
   // ── Profile state ──
   const [username, setUsername] = useState("");
+  const [role, setRole] = useState("CLIENT");
   const [plan, setPlan] = useState("BASIC");
-  const [alertEmail, setAlertEmail] = useState("");
+  const [maxDevices, setMaxDevices] = useState(5);
+  const [deviceCount, setDeviceCount] = useState(0);
+  const [alertPhone, setAlertPhone] = useState("");
 
   // ── Password state ──
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  // ── Sync the localStorage "user" object so App.jsx / Sidebar always get fresh data ──
+  const syncLocalUser = (u) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("user") || "{}");
+      const merged = {
+        ...stored,
+        username: u.username ?? stored.username,
+        role: u.role ?? stored.role,
+        plan: u.plan ?? stored.plan,
+        maxDevices: u.maxDevices ?? stored.maxDevices,
+        deviceCount: u.deviceCount ?? stored.deviceCount,
+      };
+      localStorage.setItem("user", JSON.stringify(merged));
+    } catch {
+      /* ignore parse errors */
+    }
+  };
 
   // ── Fetch profile on mount ──
   useEffect(() => {
@@ -45,13 +71,17 @@ const Settings = () => {
         const res = await api.getProfile();
         const u = res.user;
         setUsername(u.username ?? "");
+        setRole(u.role ?? "CLIENT");
         setPlan(u.plan ?? "BASIC");
-        setAlertEmail(u.alertEmail ?? "");
+        setMaxDevices(u.maxDevices ?? 5);
+        setDeviceCount(u.deviceCount ?? 0);
+        setAlertPhone(u.alertWhatsApp ?? "");
+        syncLocalUser(u);
       } catch (err) {
         console.error("Failed to load profile:", err);
         setFeedback({
           type: "error",
-          message: "فشل تحميل بيانات الحساب. حاول لاحقاً.",
+          message: t("settings.error_load"),
         });
       } finally {
         setIsLoading(false);
@@ -67,25 +97,28 @@ const Settings = () => {
     return () => clearTimeout(timer);
   }, [feedback]);
 
-  // ── Save profile (alertEmail) ──
+  // ── Save profile (alertWhatsApp) ──
   const handleSaveProfile = async () => {
     setProfileSaving(true);
     setFeedback(null);
     try {
       const res = await api.updateProfile({
-        alertEmail: alertEmail.trim() || null,
+        alertWhatsApp: alertPhone.trim() || null,
       });
-      // Sync state with server response
       const u = res.user;
       if (u) {
-        setAlertEmail(u.alertEmail ?? "");
+        setAlertPhone(u.alertWhatsApp ?? "");
+        if (u.role !== undefined) setRole(u.role);
+        if (u.maxDevices !== undefined) setMaxDevices(u.maxDevices);
+        if (u.deviceCount !== undefined) setDeviceCount(u.deviceCount);
+        syncLocalUser(u);
       }
-      setFeedback({ type: "success", message: "تم حفظ البيانات بنجاح ✓" });
+      setFeedback({ type: "success", message: t("settings.success_save") });
     } catch (err) {
       console.error("Failed to save profile:", err);
       setFeedback({
         type: "error",
-        message: err.message || "فشل حفظ البيانات.",
+        message: err.message || t("settings.error_save"),
       });
     } finally {
       setProfileSaving(false);
@@ -98,19 +131,22 @@ const Settings = () => {
     if (!newPassword.trim()) {
       setFeedback({
         type: "error",
-        message: "يرجى إدخال كلمة المرور الجديدة.",
+        message: t("settings.validation_password_empty"),
       });
       return;
     }
     if (newPassword.trim().length < 6) {
       setFeedback({
         type: "error",
-        message: "كلمة المرور يجب أن تكون 6 أحرف على الأقل.",
+        message: t("settings.validation_password_short"),
       });
       return;
     }
     if (newPassword !== confirmPassword) {
-      setFeedback({ type: "error", message: "كلمتا المرور غير متطابقتين." });
+      setFeedback({
+        type: "error",
+        message: t("settings.validation_password_mismatch"),
+      });
       return;
     }
 
@@ -120,12 +156,12 @@ const Settings = () => {
       await api.updateProfile({ password: newPassword.trim() });
       setNewPassword("");
       setConfirmPassword("");
-      setFeedback({ type: "success", message: "تم تحديث كلمة المرور بنجاح ✓" });
+      setFeedback({ type: "success", message: t("settings.success_password") });
     } catch (err) {
       console.error("Failed to update password:", err);
       setFeedback({
         type: "error",
-        message: err.message || "فشل تحديث كلمة المرور.",
+        message: err.message || t("settings.error_password"),
       });
     } finally {
       setPasswordSaving(false);
@@ -135,19 +171,22 @@ const Settings = () => {
   // ── Loading skeleton ──
   if (isLoading) {
     return (
-      <div dir="rtl" className="text-right max-w-5xl mx-auto pb-12">
+      <div
+        dir={isRtl ? "rtl" : "ltr"}
+        className={`${isRtl ? "text-right" : "text-left"} max-w-5xl mx-auto pb-12`}
+      >
         <header className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            إعدادات الحساب
+            {t("settings.title")}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            إدارة بياناتك الشخصية وتفضيلات الإشعارات
+            {t("settings.subtitle")}
           </p>
         </header>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <span className="mr-3 text-slate-500 text-sm">
-            جاري تحميل البيانات…
+          <span className="ms-3 text-slate-500 text-sm">
+            {t("settings.loading_data")}
           </span>
         </div>
       </div>
@@ -155,15 +194,16 @@ const Settings = () => {
   }
 
   return (
-    <div dir="rtl" className="text-right max-w-5xl mx-auto pb-12">
+    <div
+      dir={isRtl ? "rtl" : "ltr"}
+      className={`${isRtl ? "text-right" : "text-left"} max-w-5xl mx-auto pb-12`}
+    >
       {/* ── Page Header ── */}
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-          إعدادات الحساب
+          {t("settings.title")}
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          إدارة بياناتك الشخصية وتفضيلات الإشعارات
-        </p>
+        <p className="mt-1 text-sm text-slate-500">{t("settings.subtitle")}</p>
       </header>
 
       {/* ── Feedback Banner ── */}
@@ -188,23 +228,27 @@ const Settings = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* ── Column 1: Profile & Alerts ── */}
         <Card className="border-slate-200 shadow-sm rounded-xl">
-          <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4 text-right">
+          <CardHeader
+            className={`bg-slate-50/50 border-b border-slate-100 pb-4 ${isRtl ? "text-right" : "text-left"}`}
+          >
             <div className="flex items-center gap-2">
               <User className="h-5 w-5 text-blue-600" />
               <CardTitle className="text-lg text-slate-900">
-                الملف الشخصي والإشعارات
+                {t("settings.profile_title")}
               </CardTitle>
             </div>
             <CardDescription className="text-slate-500">
-              معلومات حسابك وإعدادات التنبيهات
+              {t("settings.profile_desc")}
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-6 space-y-6 text-right">
+          <CardContent
+            className={`pt-6 space-y-6 ${isRtl ? "text-right" : "text-left"}`}
+          >
             {/* Username (read-only) */}
             <div className="space-y-2">
               <Label htmlFor="username" className="flex items-center gap-1.5">
                 <Mail className="h-3.5 w-3.5 text-slate-400" />
-                البريد الإلكتروني (اسم المستخدم)
+                {t("settings.label_username")}
               </Label>
               <Input
                 id="username"
@@ -214,14 +258,14 @@ const Settings = () => {
                 dir="ltr"
               />
               <p className="text-xs text-slate-400">
-                لا يمكن تغيير اسم المستخدم.
+                {t("settings.username_readonly")}
               </p>
             </div>
 
             {/* Plan Badge */}
             <div className="space-y-2">
-              <Label>الباقة الحالية</Label>
-              <div>
+              <Label>{t("settings.label_plan")}</Label>
+              <div className="flex items-center gap-2">
                 <Badge
                   className={
                     plan === "PRO"
@@ -230,31 +274,40 @@ const Settings = () => {
                   }
                   variant="outline"
                 >
-                  {plan === "PRO" ? "PRO" : "BASIC"}
+                  {t("plans." + (plan || "BASIC"))}
                 </Badge>
+                {role === "ADMIN" ? (
+                  <span className="text-sm text-slate-500">
+                    {deviceCount} {t("settings.devices_label")}
+                  </span>
+                ) : (
+                  <span className="text-sm text-slate-500">
+                    {deviceCount} / {maxDevices} {t("settings.devices_label")}
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* Alert Email */}
+            {/* Alert Phone */}
             <div className="space-y-2">
               <Label
-                htmlFor="alert-email"
+                htmlFor="alert-phone"
                 className="flex items-center gap-1.5"
               >
-                <Mail className="h-3.5 w-3.5 text-slate-400" />
-                البريد الإلكتروني للإشعارات
+                <Phone className="h-3.5 w-3.5 text-slate-400" />
+                {t("settings.label_alert_phone")}
               </Label>
               <Input
-                id="alert-email"
-                type="email"
-                value={alertEmail}
-                onChange={(e) => setAlertEmail(e.target.value)}
+                id="alert-phone"
+                type="tel"
+                value={alertPhone}
+                onChange={(e) => setAlertPhone(e.target.value)}
                 className="bg-white text-left"
                 dir="ltr"
-                placeholder="alerts@example.com"
+                placeholder="+966 5xxxxxxxx"
               />
               <p className="text-xs text-slate-500">
-                سيتم إرسال تنبيهات الحرارة العالية إلى هذا البريد.
+                {t("settings.alert_phone_hint")}
               </p>
             </div>
 
@@ -263,14 +316,14 @@ const Settings = () => {
               <Button
                 onClick={handleSaveProfile}
                 disabled={profileSaving}
-                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[140px] flex items-center gap-2 justify-center"
+                className="bg-blue-600 hover:bg-blue-700 text-white min-w-35 flex items-center gap-2 justify-center"
               >
                 {profileSaving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                <span>حفظ البيانات</span>
+                <span>{t("settings.btn_save_profile")}</span>
               </Button>
             </div>
           </CardContent>
@@ -278,18 +331,22 @@ const Settings = () => {
 
         {/* ── Column 2: Security / Password ── */}
         <Card className="border-slate-200 shadow-sm rounded-xl">
-          <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4 text-right">
+          <CardHeader
+            className={`bg-slate-50/50 border-b border-slate-100 pb-4 ${isRtl ? "text-right" : "text-left"}`}
+          >
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-amber-600" />
               <CardTitle className="text-lg text-slate-900">
-                الأمان وكلمة المرور
+                {t("settings.security_title")}
               </CardTitle>
             </div>
             <CardDescription className="text-slate-500">
-              تحديث كلمة المرور الخاصة بحسابك
+              {t("settings.security_desc")}
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-6 space-y-6 text-right">
+          <CardContent
+            className={`pt-6 space-y-6 ${isRtl ? "text-right" : "text-left"}`}
+          >
             {/* New Password */}
             <div className="space-y-2">
               <Label
@@ -297,7 +354,7 @@ const Settings = () => {
                 className="flex items-center gap-1.5"
               >
                 <Lock className="h-3.5 w-3.5 text-slate-400" />
-                كلمة المرور الجديدة
+                {t("settings.label_new_password")}
               </Label>
               <Input
                 id="new-password"
@@ -317,7 +374,7 @@ const Settings = () => {
                 className="flex items-center gap-1.5"
               >
                 <Lock className="h-3.5 w-3.5 text-slate-400" />
-                تأكيد كلمة المرور
+                {t("settings.label_confirm_password")}
               </Label>
               <Input
                 id="confirm-password"
@@ -332,7 +389,7 @@ const Settings = () => {
                 confirmPassword &&
                 newPassword !== confirmPassword && (
                   <p className="text-xs text-red-500 font-medium">
-                    كلمتا المرور غير متطابقتين.
+                    {t("settings.password_mismatch")}
                   </p>
                 )}
             </div>
@@ -342,14 +399,14 @@ const Settings = () => {
               <Button
                 onClick={handleUpdatePassword}
                 disabled={passwordSaving}
-                className="bg-amber-600 hover:bg-amber-700 text-white min-w-[160px] flex items-center gap-2 justify-center"
+                className="bg-amber-600 hover:bg-amber-700 text-white min-w-40 flex items-center gap-2 justify-center"
               >
                 {passwordSaving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Shield className="h-4 w-4" />
                 )}
-                <span>تحديث كلمة المرور</span>
+                <span>{t("settings.btn_update_password")}</span>
               </Button>
             </div>
           </CardContent>

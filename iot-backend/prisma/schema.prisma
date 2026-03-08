@@ -13,11 +13,27 @@ enum PlanType {
   PRO
 }
 
-// Type of alert for AlertLog (temperature bounds or offline)
+// Type of alert for AlertLog (temperature bounds, offline, or battery)
 enum AlertType {
   TEMPERATURE_HIGH
   TEMPERATURE_LOW
   OFFLINE
+  BATTERY_LOW
+  BATTERY_CRITICAL
+}
+
+// Last known temperature alert state for a device (used for deduplication)
+enum AlertStatus {
+  NORMAL
+  TEMPERATURE_HIGH
+  TEMPERATURE_LOW
+}
+
+// Last known battery alert state for a device (used for deduplication)
+enum BatteryAlertStatus {
+  NORMAL
+  BATTERY_LOW
+  BATTERY_CRITICAL
 }
 
 model User {
@@ -66,6 +82,10 @@ model Device {
   // Status
   batteryLevel Float?  // 0–100 or null if unknown
   isOffline    Boolean @default(false)
+
+  // Deduplication state for alert firing
+  lastAlertStatus   AlertStatus        @default(NORMAL)
+  lastBatteryStatus BatteryAlertStatus @default(NORMAL)
 
   readings  Reading[]
   alertLogs AlertLog[]

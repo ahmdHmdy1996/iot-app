@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   AreaChart,
   Area,
@@ -12,17 +12,33 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { Thermometer, Droplet, Battery, Wifi, WifiOff, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Thermometer,
+  Droplet,
+  Battery,
+  Wifi,
+  WifiOff,
+  ChevronLeft,
+  ChevronRight,
+  ArrowRight,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import moment from "moment";
 import api from "../services/api";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -45,6 +61,7 @@ const alertTypeLabel = (type) => {
 
 const DeviceDetails = () => {
   const { imei } = useParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
   const [alerts, setAlerts] = useState([]);
@@ -52,6 +69,32 @@ const DeviceDetails = () => {
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  // Edit dialog state
+  const [openEdit, setOpenEdit] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editMinTemp, setEditMinTemp] = useState("");
+  const [editMaxTemp, setEditMaxTemp] = useState("");
+  const [editCalibration, setEditCalibration] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  const [clearingAlerts, setClearingAlerts] = useState(false);
+
+  const handleClearAlerts = async () => {
+    if (!window.confirm("هل أنت متأكد من مسح جميع التنبيهات لهذا الجهاز؟"))
+      return;
+    try {
+      setClearingAlerts(true);
+      await api.clearAlerts(imei);
+      setAlerts([]);
+      setCurrentPage(1);
+    } catch (err) {
+      alert(err.message || "فشل في مسح التنبيهات");
+    } finally {
+      setClearingAlerts(false);
+    }
+  };
 
   const fetchDashboardData = useCallback(async () => {
     if (!imei) return;
@@ -106,15 +149,16 @@ const DeviceDetails = () => {
           : "green";
 
   const sortedAlerts = useMemo(
-    () => [...alerts].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
-    [alerts]
+    () =>
+      [...alerts].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+    [alerts],
   );
 
   const totalPages = Math.max(1, Math.ceil(sortedAlerts.length / pageSize));
   const paginatedAlerts = useMemo(
     () =>
       sortedAlerts.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [sortedAlerts, currentPage, pageSize]
+    [sortedAlerts, currentPage, pageSize],
   );
 
   useEffect(() => {
@@ -122,27 +166,124 @@ const DeviceDetails = () => {
   }, [currentPage, totalPages]);
 
   const getAlertBadgeVariant = (alertType) => {
-    if (alertType === "TEMPERATURE_HIGH" || alertType === "TEMPERATURE_LOW") return "destructive";
+    if (alertType === "TEMPERATURE_HIGH" || alertType === "TEMPERATURE_LOW")
+      return "destructive";
     return "secondary";
+  };
+
+  const openEditDialog = () => {
+    if (!device) return;
+    setEditName(device.name ?? "");
+    setEditMinTemp(device.minTemp != null ? String(device.minTemp) : "");
+    setEditMaxTemp(device.maxTemp != null ? String(device.maxTemp) : "");
+    setEditCalibration(
+      device.calibrationOffset != null ? String(device.calibrationOffset) : "0",
+    );
+    setEditError("");
+    setOpenEdit(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditError("");
+    try {
+      setEditLoading(true);
+      await api.updateMyDevice(imei, {
+        name: editName.trim() || null,
+        minTemp: editMinTemp !== "" ? Number(editMinTemp) : null,
+        maxTemp: editMaxTemp !== "" ? Number(editMaxTemp) : null,
+        calibrationOffset: editCalibration !== "" ? Number(editCalibration) : 0,
+      });
+      setOpenEdit(false);
+      await fetchDashboardData();
+    } catch (err) {
+      setEditError(err.message || "فشل في حفظ التغييرات");
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   if (loading && !dashboardData) {
     return (
-      <div className="flex items-center justify-center min-h-[320px]" dir="rtl">
+      <div className="flex items-center justify-center min-h-80" dir="rtl">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
       </div>
     );
   }
 
   const chartData = dashboardData?.chartData ?? [];
-  const dailyStats = dashboardData?.dailyStats ?? { maxTemp: null, minTemp: null, avgTemp: null };
+  const dailyStats = dashboardData?.dailyStats ?? {
+    maxTemp: null,
+    minTemp: null,
+    avgTemp: null,
+  };
 
   return (
     <div dir="rtl" className="text-right">
-      <h1 className="text-2xl font-bold text-slate-900 mb-7">
-        تفاصيل الجهاز:{" "}
-        <span className="font-mono font-semibold">{dashboardData?.device?.name ?? imei}</span>
-      </h1>
+      {/* ── Rich Device Header ── */}
+      <div className="mb-7 rounded-xl bg-white border border-slate-100 shadow-sm p-5">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          {/* Left: Back button + device info */}
+          <div className="flex items-start gap-4">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="mt-1 flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors shrink-0"
+              aria-label="رجوع"
+            >
+              <ArrowRight className="w-4 h-4 text-slate-600" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                {device?.name ?? (
+                  <span className="font-mono text-slate-500">{imei}</span>
+                )}
+              </h1>
+              <p className="text-xs font-mono text-slate-400 mt-0.5 select-all">
+                {imei}
+              </p>
+              {/* Limits + Offset chips */}
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                {device?.minTemp != null && (
+                  <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium">
+                    الحد الأدنى: {device.minTemp}°C
+                  </span>
+                )}
+                {device?.maxTemp != null && (
+                  <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-red-50 text-red-700 font-medium">
+                    الحد الأعلى: {device.maxTemp}°C
+                  </span>
+                )}
+                {device?.calibrationOffset != null &&
+                  device.calibrationOffset !== 0 && (
+                    <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium">
+                      معامل المعايرة: {device.calibrationOffset > 0 ? "+" : ""}
+                      {device.calibrationOffset}°C
+                    </span>
+                  )}
+                {device?.minTemp == null && device?.maxTemp == null && (
+                  <span className="text-xs text-slate-400">
+                    لا توجد نطاقات مضبوطة
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Right: Edit button */}
+          <div className="shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openEditDialog}
+              disabled={!device}
+              className="gap-2"
+            >
+              <Pencil className="w-4 h-4" />
+              تعديل الجهاز
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {error && (
         <div
@@ -170,7 +311,9 @@ const DeviceDetails = () => {
                 <Thermometer className="h-6 w-6" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm text-slate-500 mb-1">درجة الحرارة الحالية</p>
+                <p className="text-sm text-slate-500 mb-1">
+                  درجة الحرارة الحالية
+                </p>
                 <p
                   className={`text-2xl font-bold ${
                     tempColor === "red"
@@ -182,7 +325,9 @@ const DeviceDetails = () => {
                           : "text-slate-900"
                   }`}
                 >
-                  {currentTemp != null ? `${Number(currentTemp).toFixed(1)}°C` : "—"}
+                  {currentTemp != null
+                    ? `${Number(currentTemp).toFixed(1)}°C`
+                    : "—"}
                 </p>
               </div>
             </div>
@@ -198,7 +343,9 @@ const DeviceDetails = () => {
               <div className="min-w-0">
                 <p className="text-sm text-slate-500 mb-1">الرطوبة الحالية</p>
                 <p className="text-2xl font-bold text-slate-900">
-                  {currentHumidity != null ? `${Number(currentHumidity).toFixed(1)}%` : "—"}
+                  {currentHumidity != null
+                    ? `${Number(currentHumidity).toFixed(1)}%`
+                    : "—"}
                 </p>
               </div>
             </div>
@@ -226,7 +373,9 @@ const DeviceDetails = () => {
                       : "text-slate-900"
                   }`}
                 >
-                  {device?.batteryLevel != null ? `${device.batteryLevel}%` : "—"}
+                  {device?.batteryLevel != null
+                    ? `${device.batteryLevel}%`
+                    : "—"}
                 </p>
               </div>
             </div>
@@ -238,7 +387,9 @@ const DeviceDetails = () => {
             <div className="flex items-center justify-between gap-4">
               <div
                 className={`p-2 rounded-full shrink-0 ${
-                  device?.isOffline ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-600"
+                  device?.isOffline
+                    ? "bg-slate-100 text-slate-500"
+                    : "bg-emerald-50 text-emerald-600"
                 }`}
               >
                 {device?.isOffline ? (
@@ -268,19 +419,29 @@ const DeviceDetails = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6 pt-2">
-            <div className="h-[400px] w-full">
+            <div className="h-100 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={chartData}
                   margin={{ top: 10, right: 30, left: 20, bottom: 10 }}
                 >
                   <defs>
-                    <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient
+                      id="tempGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
                       <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
                       <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="#f1f5f9"
+                    strokeDasharray="3 3"
+                  />
                   <XAxis
                     dataKey="timestamp"
                     tickFormatter={(time) => moment(time).format("HH:mm")}
@@ -295,15 +456,24 @@ const DeviceDetails = () => {
                     tick={{ fill: "#94a3b8", fontSize: 12 }}
                   />
                   <Tooltip
-                    labelFormatter={(label) => moment(label).format("YYYY-MM-DD HH:mm")}
-                    formatter={(value) => [`${Number(value).toFixed(1)}°C`, "درجة الحرارة"]}
+                    labelFormatter={(label) =>
+                      moment(label).format("YYYY-MM-DD HH:mm")
+                    }
+                    formatter={(value) => [
+                      `${Number(value).toFixed(1)}°C`,
+                      "درجة الحرارة",
+                    ]}
                     contentStyle={{
                       backgroundColor: "#ffffff",
                       borderRadius: "12px",
                       border: "1px solid #f1f5f9",
                       boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
                     }}
-                    cursor={{ stroke: "#e2e8f0", strokeWidth: 1, strokeDasharray: "3 3" }}
+                    cursor={{
+                      stroke: "#e2e8f0",
+                      strokeWidth: 1,
+                      strokeDasharray: "3 3",
+                    }}
                   />
                   {device?.maxTemp != null && (
                     <ReferenceLine
@@ -343,19 +513,29 @@ const DeviceDetails = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6 pt-2">
-            <div className="h-[300px] w-full">
+            <div className="h-75 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={chartData}
                   margin={{ top: 10, right: 50, left: 10, bottom: 10 }}
                 >
                   <defs>
-                    <linearGradient id="humidityAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient
+                      id="humidityAreaGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
                       <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
                       <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="#f1f5f9"
+                    strokeDasharray="3 3"
+                  />
                   <XAxis
                     dataKey="timestamp"
                     tickFormatter={(time) => moment(time).format("HH:mm")}
@@ -380,9 +560,13 @@ const DeviceDetails = () => {
                     tickFormatter={(v) => `${v}%`}
                   />
                   <Tooltip
-                    labelFormatter={(label) => moment(label).format("YYYY-MM-DD HH:mm")}
+                    labelFormatter={(label) =>
+                      moment(label).format("YYYY-MM-DD HH:mm")
+                    }
                     formatter={(value, name) => [
-                      name === "temperature" ? `${Number(value).toFixed(1)}°C` : `${Number(value).toFixed(1)}%`,
+                      name === "temperature"
+                        ? `${Number(value).toFixed(1)}°C`
+                        : `${Number(value).toFixed(1)}%`,
                       name === "temperature" ? "درجة الحرارة" : "الرطوبة",
                     ]}
                     contentStyle={{
@@ -391,7 +575,11 @@ const DeviceDetails = () => {
                       border: "1px solid #f1f5f9",
                       boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
                     }}
-                    cursor={{ stroke: "#e2e8f0", strokeWidth: 1, strokeDasharray: "3 3" }}
+                    cursor={{
+                      stroke: "#e2e8f0",
+                      strokeWidth: 1,
+                      strokeDasharray: "3 3",
+                    }}
                   />
                   <Area
                     type="monotone"
@@ -426,19 +614,29 @@ const DeviceDetails = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6 pt-2">
-            <div className="h-[300px] w-full">
+            <div className="h-75 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={chartData}
                   margin={{ top: 10, right: 30, left: 20, bottom: 10 }}
                 >
                   <defs>
-                    <linearGradient id="voltageGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient
+                      id="voltageGradient"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
                       <stop offset="0%" stopColor="#22c55e" stopOpacity={0.3} />
                       <stop offset="100%" stopColor="#f59e0b" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="#f1f5f9"
+                    strokeDasharray="3 3"
+                  />
                   <XAxis
                     dataKey="timestamp"
                     tickFormatter={(time) => moment(time).format("HH:mm")}
@@ -454,15 +652,24 @@ const DeviceDetails = () => {
                     tickFormatter={(v) => `${v}V`}
                   />
                   <Tooltip
-                    labelFormatter={(label) => moment(label).format("YYYY-MM-DD HH:mm")}
-                    formatter={(value) => [value != null ? `${Number(value).toFixed(2)}V` : "—", "الجهد"]}
+                    labelFormatter={(label) =>
+                      moment(label).format("YYYY-MM-DD HH:mm")
+                    }
+                    formatter={(value) => [
+                      value != null ? `${Number(value).toFixed(2)}V` : "—",
+                      "الجهد",
+                    ]}
                     contentStyle={{
                       backgroundColor: "#ffffff",
                       borderRadius: "12px",
                       border: "1px solid #f1f5f9",
                       boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
                     }}
-                    cursor={{ stroke: "#e2e8f0", strokeWidth: 1, strokeDasharray: "3 3" }}
+                    cursor={{
+                      stroke: "#e2e8f0",
+                      strokeWidth: 1,
+                      strokeDasharray: "3 3",
+                    }}
                   />
                   <Area
                     type="monotone"
@@ -485,7 +692,9 @@ const DeviceDetails = () => {
           <CardContent className="p-6 text-center">
             <p className="text-sm text-slate-500 mb-2">أعلى حرارة اليوم</p>
             <p className="text-2xl font-bold text-slate-900">
-              {dailyStats.maxTemp != null ? `${Number(dailyStats.maxTemp).toFixed(1)}°C` : "—"}
+              {dailyStats.maxTemp != null
+                ? `${Number(dailyStats.maxTemp).toFixed(1)}°C`
+                : "—"}
             </p>
           </CardContent>
         </Card>
@@ -493,7 +702,9 @@ const DeviceDetails = () => {
           <CardContent className="p-6 text-center">
             <p className="text-sm text-slate-500 mb-2">أدنى حرارة اليوم</p>
             <p className="text-2xl font-bold text-slate-900">
-              {dailyStats.minTemp != null ? `${Number(dailyStats.minTemp).toFixed(1)}°C` : "—"}
+              {dailyStats.minTemp != null
+                ? `${Number(dailyStats.minTemp).toFixed(1)}°C`
+                : "—"}
             </p>
           </CardContent>
         </Card>
@@ -501,7 +712,9 @@ const DeviceDetails = () => {
           <CardContent className="p-6 text-center">
             <p className="text-sm text-slate-500 mb-2">متوسط الحرارة اليوم</p>
             <p className="text-2xl font-bold text-slate-900">
-              {dailyStats.avgTemp != null ? `${Number(dailyStats.avgTemp).toFixed(1)}°C` : "—"}
+              {dailyStats.avgTemp != null
+                ? `${Number(dailyStats.avgTemp).toFixed(1)}°C`
+                : "—"}
             </p>
           </CardContent>
         </Card>
@@ -510,9 +723,27 @@ const DeviceDetails = () => {
       {/* Paginated Alerts Table */}
       <Card className="rounded-xl border-slate-100 bg-white shadow-sm">
         <CardHeader className="p-6 pb-4">
-          <CardTitle className="text-lg font-semibold text-slate-900">
-            سجل التنبيهات
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-semibold text-slate-900">
+              سجل التنبيهات
+            </CardTitle>
+            {sortedAlerts.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAlerts}
+                disabled={clearingAlerts}
+                className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              >
+                {clearingAlerts ? (
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                مسح الكل
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-6 pt-0">
           {alertsLoading ? (
@@ -526,14 +757,23 @@ const DeviceDetails = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-100 hover:bg-transparent">
-                    <TableHead className="text-right font-semibold text-slate-700">التاريخ والوقت</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700">نوع التنبيه</TableHead>
-                    <TableHead className="text-right font-semibold text-slate-700">الرسالة</TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700">
+                      التاريخ والوقت
+                    </TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700">
+                      نوع التنبيه
+                    </TableHead>
+                    <TableHead className="text-right font-semibold text-slate-700">
+                      الرسالة
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedAlerts.map((alert) => (
-                    <TableRow key={alert.id ?? alert.timestamp} className="border-slate-100">
+                    <TableRow
+                      key={alert.id ?? alert.timestamp}
+                      className="border-slate-100"
+                    >
                       <TableCell className="text-right text-slate-700">
                         {moment(alert.timestamp).format("YYYY-MM-DD HH:mm")}
                       </TableCell>
@@ -573,7 +813,9 @@ const DeviceDetails = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() =>
+                      setCurrentPage((p) => Math.min(totalPages, p + 1))
+                    }
                     disabled={currentPage >= totalPages}
                     className="gap-1"
                   >
@@ -586,6 +828,87 @@ const DeviceDetails = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Edit Device Dialog ── */}
+      <Dialog
+        open={openEdit}
+        onOpenChange={(open) => !open && setOpenEdit(false)}
+      >
+        <DialogContent className="sm:max-w-md text-right" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>تعديل إعدادات الجهاز</DialogTitle>
+            <DialogDescription>تعديل: {device?.name || imei}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            {editError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded-md">
+                {editError}
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="dd-edit-name">اسم الجهاز</Label>
+              <Input
+                id="dd-edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="اسم الجهاز"
+                className="text-right"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dd-edit-min">الحد الأدنى (°C)</Label>
+                <Input
+                  id="dd-edit-min"
+                  type="number"
+                  value={editMinTemp}
+                  onChange={(e) => setEditMinTemp(e.target.value)}
+                  placeholder="فارغ لإلغاء"
+                  className="text-right"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dd-edit-max">الحد الأعلى (°C)</Label>
+                <Input
+                  id="dd-edit-max"
+                  type="number"
+                  value={editMaxTemp}
+                  onChange={(e) => setEditMaxTemp(e.target.value)}
+                  placeholder="فارغ لإلغاء"
+                  className="text-right"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dd-edit-cal">معامل المعايرة (°C)</Label>
+              <Input
+                id="dd-edit-cal"
+                type="number"
+                step="0.1"
+                value={editCalibration}
+                onChange={(e) => setEditCalibration(e.target.value)}
+                placeholder="0"
+                className="text-right"
+              />
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpenEdit(false)}
+              >
+                إلغاء
+              </Button>
+              <Button type="submit" disabled={editLoading}>
+                {editLoading && (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent ml-2 inline-block" />
+                )}
+                حفظ التغييرات
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

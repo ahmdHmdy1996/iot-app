@@ -3,8 +3,16 @@ import { getDeviceForRole } from "./device.service.js";
 
 /**
  * Get readings for a device (with ownership check).
+ * Supports optional date range (startDate/endDate) or limit-based fetch.
  */
-export async function getReadings(imei, userId, role, limit = 50) {
+export async function getReadings(
+  imei,
+  userId,
+  role,
+  limit = 50,
+  startDate = null,
+  endDate = null,
+) {
   const device = await getDeviceForRole(imei, userId, role);
   if (!device) {
     const err = new Error("Access denied or device not found.");
@@ -12,10 +20,19 @@ export async function getReadings(imei, userId, role, limit = 50) {
     throw err;
   }
 
+  const where = { deviceImei: imei };
+  if (startDate && endDate) {
+    const from = new Date(startDate);
+    const to = new Date(endDate);
+    if (!isNaN(from.getTime()) && !isNaN(to.getTime())) {
+      where.timestamp = { gte: from, lte: to };
+    }
+  }
+
   const readings = await prisma.reading.findMany({
-    where: { deviceImei: imei },
-    take: Number(limit),
-    orderBy: { timestamp: "desc" },
+    where,
+    ...(startDate && endDate ? {} : { take: Number(limit) }),
+    orderBy: { timestamp: "asc" },
   });
 
   return {
