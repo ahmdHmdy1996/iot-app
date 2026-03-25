@@ -20,16 +20,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            # 1. الدخول لمجلد المشروع (المسار اللي شفناه في الـ Terminal)
             cd ~/iot-app
-            
-            # 2. سحب الكود الجديد
             git pull origin main
             
-            # 3. إعادة بناء وتشغيل الحاويات بناءً على ملف الـ YML بتاعك
-            docker-compose up -d --build
+            docker-compose up -d --build --force-recreate
             
-            # 4. تحديثات البريزما (Prisma) جوه حاوية الباك إند
-            # استخدمنا -i بدل -it لأن جيت هاب ملوش TTY
             docker exec -i iot_backend_prod npx prisma migrate deploy
             docker exec -i iot_backend_prod npx prisma generate
