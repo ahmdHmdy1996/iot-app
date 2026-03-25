@@ -22,8 +22,9 @@ jobs:
           script: |
             cd ~/iot-app
             git pull origin main
-            
-            docker-compose up -d --build --force-recreate
+
+            docker-compose build --no-cache
+            docker-compose up -d --force-recreate
             
             docker exec -i iot_backend_prod npx prisma migrate deploy
             docker exec -i iot_backend_prod npx prisma generate
