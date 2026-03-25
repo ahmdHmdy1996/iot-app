@@ -1,0 +1,35 @@
+name: Deploy iot-app to Hostinger VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # 1. الدخول لمجلد المشروع (المسار اللي شفناه في الـ Terminal)
+            cd ~/iot-app
+            
+            # 2. سحب الكود الجديد
+            git pull origin main
+            
+            # 3. إعادة بناء وتشغيل الحاويات بناءً على ملف الـ YML بتاعك
+            docker-compose up -d --build
+            
+            # 4. تحديثات البريزما (Prisma) جوه حاوية الباك إند
+            # استخدمنا -i بدل -it لأن جيت هاب ملوش TTY
+            docker exec -i iot_backend_prod npx prisma migrate deploy
+            docker exec -i iot_backend_prod npx prisma generate
