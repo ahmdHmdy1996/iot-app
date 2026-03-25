@@ -132,7 +132,7 @@ const SuperAdminSettings = () => {
       <Button
         onClick={handleSave}
         disabled={isSaving}
-        className="bg-blue-600 hover:bg-blue-700 text-white min-w-[140px] flex items-center gap-2 justify-center"
+        className="bg-blue-600 hover:bg-blue-700 text-white min-w-35 flex items-center gap-2 justify-center"
       >
         {isSaving ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -286,7 +286,7 @@ const SuperAdminSettings = () => {
                     type="number"
                     value={smtpPort}
                     onChange={(e) => setSmtpPort(e.target.value)}
-                    className="bg-white text-left max-w-[150px]"
+                    className="bg-white text-left max-w-37.5"
                     dir="ltr"
                     placeholder="587"
                   />
