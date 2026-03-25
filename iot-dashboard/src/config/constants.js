@@ -4,7 +4,9 @@
 
 // API Configuration
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:3005";
 export const API_KEY = "560bb6b4-99af-4054-802b-4677c9ca3115";
 
 // Auth (JWT) – key used in localStorage

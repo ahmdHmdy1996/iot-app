@@ -23,8 +23,13 @@ jobs:
             cd ~/iot-app
             git pull origin main
 
+            export VITE_API_URL='${{ secrets.VITE_API_URL }}'
+            if [ -z "$VITE_API_URL" ]; then
+              VITE_API_URL='http://76.13.33.253:3005'
+            fi
+
             docker-compose build --no-cache
             docker-compose up -d --force-recreate
-            
+
             docker exec -i iot_backend_prod npx prisma migrate deploy
             docker exec -i iot_backend_prod npx prisma generate

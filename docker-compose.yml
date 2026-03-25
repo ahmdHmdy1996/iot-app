@@ -39,7 +39,10 @@ services:
 
   # 3. خدمة الفرونت إند (Dashboard) - دي اللي كانت ناقصة!
   iot_frontend:
-    build: ./iot-dashboard
+    build:
+      context: ./iot-dashboard
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://76.13.33.253:3005}
     container_name: iot_dashboard_prod
     restart: always
     ports:
