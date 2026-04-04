@@ -6,6 +6,10 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
+  Eye,
+  Activity,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -65,6 +69,12 @@ const UserManagement = () => {
   // Delete confirmation dialog
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // View user devices
+  const [openViewDevices, setOpenViewDevices] = useState(false);
+  const [viewingUser, setViewingUser] = useState(null);
+  const [userDevices, setUserDevices] = useState([]);
+  const [loadingUserDevices, setLoadingUserDevices] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -172,6 +182,32 @@ const UserManagement = () => {
       console.error("Delete user failed:", err);
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  const handleViewUserDevices = async (targetUser) => {
+    setViewingUser(targetUser);
+    setOpenViewDevices(true);
+    setLoadingUserDevices(true);
+    try {
+      const stored = JSON.parse(localStorage.getItem("user") || "{}");
+      let allDevices = [];
+      if (stored.role === "SUPER_ADMIN") {
+        const result = await api.getAllSystemDevices();
+        allDevices = result?.data || result || [];
+      } else {
+        const result = await api.getDevices();
+        allDevices = result?.data || result || [];
+      }
+      const filtered = (Array.isArray(allDevices) ? allDevices : []).filter(
+        (d) => d.assignedTo === targetUser.username
+      );
+      setUserDevices(filtered);
+    } catch (err) {
+      console.error(err);
+      setUserDevices([]);
+    } finally {
+      setLoadingUserDevices(false);
     }
   };
 
@@ -330,6 +366,14 @@ const UserManagement = () => {
                       {/* ── الإجراءات ── */}
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="عرض الأجهزة"
+                            onClick={() => handleViewUserDevices(user)}
+                          >
+                            <Eye className="h-4 w-4 text-blue-600" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -547,6 +591,74 @@ const UserManagement = () => {
             >
               {deleteLoading && <Loader2 className="h-4 w-4 animate-spin" />}
               {t("common.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════════════════════════════════════════════════════ */}
+      {/*  View User Devices Dialog                                 */}
+      {/* ══════════════════════════════════════════════════════════ */}
+      <Dialog open={openViewDevices} onOpenChange={(open) => !open && setOpenViewDevices(false)}>
+        <DialogContent className="sm:max-w-2xl text-right" dir={isRtl ? "rtl" : "ltr"}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-blue-600" />
+              أجهزة المستخدم: {viewingUser?.username}
+            </DialogTitle>
+            <DialogDescription>
+              قائمة بجميع الأجهزة المملوكة لهذا المستخدم.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 max-h-[60vh] overflow-y-auto">
+            {loadingUserDevices ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+                <Loader2 className="h-8 w-8 animate-spin mb-3" />
+                <p>جاري تحميل الأجهزة...</p>
+              </div>
+            ) : userDevices.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">
+                لا توجد أجهزة مخصصة لهذا المستخدم.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-100">
+                    <TableHead className={`${isRtl ? "text-right" : "text-left"} font-medium`}>الكود (IMEI)</TableHead>
+                    <TableHead className={`${isRtl ? "text-right" : "text-left"} font-medium`}>الاسم</TableHead>
+                    <TableHead className={`${isRtl ? "text-right" : "text-left"} font-medium`}>الحالة</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {userDevices.map((d) => (
+                    <TableRow key={d.imei} className="border-slate-100">
+                      <TableCell className="font-mono text-xs">{d.imei}</TableCell>
+                      <TableCell>{d.name || "—"}</TableCell>
+                      <TableCell>
+                        {d.isOffline ? (
+                          <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-0 flex w-fit items-center gap-1">
+                            <WifiOff className="h-3 w-3" /> غير متصل
+                          </Badge>
+                        ) : d.isActive ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-0 flex w-fit items-center gap-1">
+                            <Wifi className="h-3 w-3" /> متصل
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-slate-500 border-slate-200 w-fit">
+                            غير مفعل
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenViewDevices(false)}>
+              إغلاق
             </Button>
           </DialogFooter>
         </DialogContent>
