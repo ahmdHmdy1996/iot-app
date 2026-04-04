@@ -187,7 +187,16 @@ const LiveMonitor = () => {
 
       {/* Stats bar */}
       {totalCount > 0 && (
-        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 shadow-sm px-4 py-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0" />
+            <div>
+              <p className="text-xs text-slate-500">
+                {t("dashboard.total_count")}
+              </p>
+              <p className="text-xl font-bold text-slate-900">{totalCount}</p>
+            </div>
+          </div>
           <div className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 shadow-sm px-4 py-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
             <div>
@@ -200,15 +209,6 @@ const LiveMonitor = () => {
             </div>
           </div>
           <div className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 shadow-sm px-4 py-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0" />
-            <div>
-              <p className="text-xs text-slate-500">
-                {t("dashboard.total_count")}
-              </p>
-              <p className="text-xl font-bold text-slate-900">{totalCount}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 shadow-sm px-4 py-3">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
             <div>
               <p className="text-xs text-slate-500">
@@ -216,20 +216,6 @@ const LiveMonitor = () => {
               </p>
               <p className="text-xl font-bold text-slate-900">
                 {totalCount - connectedCount}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-xl bg-white border border-slate-100 shadow-sm px-4 py-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
-            <div>
-              <p className="text-xs text-slate-500">
-                {t("dashboard.connection_rate")}
-              </p>
-              <p className="text-xl font-bold text-slate-900">
-                {totalCount > 0
-                  ? Math.round((connectedCount / totalCount) * 100)
-                  : 0}
-                %
               </p>
             </div>
           </div>

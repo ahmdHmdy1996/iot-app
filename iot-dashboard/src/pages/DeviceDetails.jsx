@@ -79,11 +79,11 @@ const DeviceDetails = () => {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
 
+  const [openClearConfirm, setOpenClearConfirm] = useState(false);
   const [clearingAlerts, setClearingAlerts] = useState(false);
 
   const handleClearAlerts = async () => {
-    if (!window.confirm("هل أنت متأكد من مسح جميع التنبيهات لهذا الجهاز؟"))
-      return;
+    setOpenClearConfirm(false);
     try {
       setClearingAlerts(true);
       await api.clearAlerts(imei);
@@ -731,7 +731,7 @@ const DeviceDetails = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleClearAlerts}
+                onClick={() => setOpenClearConfirm(true)}
                 disabled={clearingAlerts}
                 className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
               >
@@ -907,6 +907,41 @@ const DeviceDetails = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Clear Alerts Confirmation Dialog ── */}
+      <Dialog
+        open={openClearConfirm}
+        onOpenChange={setOpenClearConfirm}
+      >
+        <DialogContent className="sm:max-w-md text-right" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>تأكيد مسح التنبيهات</DialogTitle>
+            <DialogDescription className="mt-2 text-slate-500">
+              هل أنت متأكد من مسح جميع التنبيهات لهذا الجهاز؟ لا يمكن التراجع عن هذا الإجراء.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0 mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpenClearConfirm(false)}
+            >
+              إلغاء
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleClearAlerts}
+              disabled={clearingAlerts}
+            >
+              {clearingAlerts && (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent ml-2 inline-block" />
+              )}
+              مسح التنبيهات
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
