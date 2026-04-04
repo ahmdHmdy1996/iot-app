@@ -282,7 +282,7 @@ const Settings = () => {
                   </span>
                 ) : (
                   <span className="text-sm text-slate-500">
-                    {deviceCount} / {maxDevices} {t("settings.devices_label")}
+                    {maxDevices} {t("settings.devices_label")}
                   </span>
                 )}
               </div>

@@ -112,6 +112,7 @@ export async function getDeviceDashboard(imei, userId, role) {
       batteryLevel: device.batteryLevel,
       isOffline: device.isOffline,
       isActive: device.isActive,
+      userId: device.userId,
     },
     currentReading,
     dailyStats,

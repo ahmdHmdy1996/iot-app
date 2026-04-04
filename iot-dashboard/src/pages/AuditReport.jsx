@@ -111,9 +111,7 @@ const AuditReport = () => {
       return;
     }
     const fromDate = new Date(dateFrom);
-    fromDate.setHours(0, 0, 0, 0);
     const toDate = new Date(dateTo);
-    toDate.setHours(23, 59, 59, 999);
 
     try {
       setFetchingReport(true);
@@ -202,10 +200,11 @@ const AuditReport = () => {
               <Label htmlFor="date-from">{t("audit.filter_from")}</Label>
               <Input
                 id="date-from"
-                type="date"
+                type="datetime-local"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 className={align}
+                dir="ltr"
               />
             </div>
 
@@ -214,10 +213,11 @@ const AuditReport = () => {
               <Label htmlFor="date-to">{t("audit.filter_to")}</Label>
               <Input
                 id="date-to"
-                type="date"
+                type="datetime-local"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
                 className={align}
+                dir="ltr"
               />
             </div>
 

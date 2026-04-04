@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -70,12 +71,17 @@ const DeviceDetails = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
+  const userStr = localStorage.getItem("user");
+  const userObj = userStr ? JSON.parse(userStr) : null;
+  const isAdmin = userObj?.role === "ADMIN" || userObj?.role === "SUPER_ADMIN";
+
   // Edit dialog state
   const [openEdit, setOpenEdit] = useState(false);
   const [editName, setEditName] = useState("");
   const [editMinTemp, setEditMinTemp] = useState("");
   const [editMaxTemp, setEditMaxTemp] = useState("");
-  const [editCalibration, setEditCalibration] = useState("");
+  const [editUserId, setEditUserId] = useState("");
+  const [users, setUsers] = useState([]);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -135,6 +141,20 @@ const DeviceDetails = () => {
     fetchAlerts();
   }, [fetchAlerts]);
 
+  const fetchUsers = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const res = userObj?.role === "SUPER_ADMIN" ? await api.getAllUsers() : await api.getUsers();
+      setUsers(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    }
+  }, [isAdmin, userObj?.role]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
   const currentTemp = dashboardData?.currentReading?.temperature ?? null;
   const currentHumidity = dashboardData?.currentReading?.humidity ?? null;
   const device = dashboardData?.device ?? null;
@@ -176,9 +196,7 @@ const DeviceDetails = () => {
     setEditName(device.name ?? "");
     setEditMinTemp(device.minTemp != null ? String(device.minTemp) : "");
     setEditMaxTemp(device.maxTemp != null ? String(device.maxTemp) : "");
-    setEditCalibration(
-      device.calibrationOffset != null ? String(device.calibrationOffset) : "0",
-    );
+    setEditUserId(device.userId != null ? String(device.userId) : "");
     setEditError("");
     setOpenEdit(true);
   };
@@ -188,12 +206,20 @@ const DeviceDetails = () => {
     setEditError("");
     try {
       setEditLoading(true);
-      await api.updateMyDevice(imei, {
+      const payload = {
         name: editName.trim() || null,
         minTemp: editMinTemp !== "" ? Number(editMinTemp) : null,
         maxTemp: editMaxTemp !== "" ? Number(editMaxTemp) : null,
-        calibrationOffset: editCalibration !== "" ? Number(editCalibration) : 0,
-      });
+      };
+
+      if (isAdmin) {
+        await api.updateDevice(imei, payload);
+        if (editUserId !== "" && String(editUserId) !== String(device.userId)) {
+          await api.assignDeviceToUser({ imei, userId: Number(editUserId) });
+        }
+      } else {
+        await api.updateMyDevice(imei, payload);
+      }
       setOpenEdit(false);
       await fetchDashboardData();
     } catch (err) {
@@ -879,18 +905,31 @@ const DeviceDetails = () => {
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="dd-edit-cal">معامل المعايرة (°C)</Label>
-              <Input
-                id="dd-edit-cal"
-                type="number"
-                step="0.1"
-                value={editCalibration}
-                onChange={(e) => setEditCalibration(e.target.value)}
-                placeholder="0"
-                className="text-right"
-              />
-            </div>
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="dd-edit-owner">مالك الجهاز</Label>
+                <Select
+                  value={editUserId || undefined}
+                  onValueChange={setEditUserId}
+                  dir="rtl"
+                >
+                  <SelectTrigger id="dd-edit-owner" className="flex-row-reverse text-right">
+                    <SelectValue placeholder="اختر مالك الجهاز" />
+                  </SelectTrigger>
+                  <SelectContent dir="rtl">
+                    {users.map((u) => (
+                      <SelectItem
+                        key={u.id}
+                        value={String(u.id)}
+                        className="flex-row-reverse justify-end pr-8 pl-2"
+                      >
+                        {u.username || u.name || `User #${u.id}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <DialogFooter className="gap-2 sm:gap-0">
               <Button
                 type="button"
