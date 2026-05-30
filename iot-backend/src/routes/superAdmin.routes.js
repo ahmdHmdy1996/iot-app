@@ -8,7 +8,7 @@ import * as apiKeyController from "../controllers/apiKey.controller.js";
 
 const router = express.Router();
 
-// Protect all routes: JWT auth + Super Admin only
+// Protect all super-admin routes: JWT auth + SUPER_ADMIN only
 router.use(authMiddleware);
 router.use(superAdminOnly);
 

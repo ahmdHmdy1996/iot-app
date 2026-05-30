@@ -68,4 +68,7 @@ router.delete("/devices/:imei", deviceController.deleteAdminDevice);
 router.post("/devices/assign", deviceController.assignDevice);
 router.get("/devices", deviceController.getAllAdminDevices);
 
+// CaterFlow B2B devices
+router.get("/caterflow-devices", deviceController.getCaterflowDevices);
+
 export default router;

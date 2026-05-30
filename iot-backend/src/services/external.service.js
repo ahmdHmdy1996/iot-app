@@ -152,6 +152,67 @@ export async function getExternalReadings(userId, imei, limit = 50) {
 }
 
 /**
+ * Get device reading history (last N readings, newest first).
+ * Each reading is annotated with a derived `alertStatus` so the CaterFlow
+ * frontend can colour-code rows without a separate alerts query.
+ */
+export async function getDeviceHistory(userId, imei, limit = 100) {
+  const rawLimit = parseInt(limit, 10);
+  const safeLimit = Number.isNaN(rawLimit)
+    ? 100
+    : Math.min(Math.max(1, rawLimit), 500);
+
+  const { device, notFound, forbidden } = await getDeviceForUser(imei, userId);
+  if (notFound) {
+    const err = new Error("Device not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (forbidden) {
+    const err = new Error("Access denied to this device");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  const readings = await prisma.reading.findMany({
+    where: { deviceImei: imei },
+    take: safeLimit,
+    orderBy: { timestamp: "desc" },
+  });
+
+  // Derive per-reading alert status from the device's configured thresholds.
+  // This lets the frontend colour-code each row without a separate alerts query.
+  const annotated = readings.map((r) => {
+    let alertStatus = "NORMAL";
+    if (device.maxTemp != null && r.temperature > device.maxTemp)
+      alertStatus = "TEMPERATURE_HIGH";
+    else if (device.minTemp != null && r.temperature < device.minTemp)
+      alertStatus = "TEMPERATURE_LOW";
+
+    return {
+      id: r.id,
+      temperature: r.temperature,
+      humidity: r.humidity,
+      voltage: r.voltage,
+      batteryLevel: device.batteryLevel ?? null,
+      timestamp: r.timestamp,
+      alertStatus,
+    };
+  });
+
+  return {
+    device: {
+      imei: device.imei,
+      name: device.name,
+      minTemp: device.minTemp,
+      maxTemp: device.maxTemp,
+    },
+    readings: annotated,
+    total: annotated.length,
+  };
+}
+
+/**
  * Get alerts via external API. Device must belong to user.
  */
 export async function getExternalAlerts(userId, imei, limit = 100) {

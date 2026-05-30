@@ -19,6 +19,7 @@ import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SuperAdminClients from "./pages/SuperAdminClients";
 import SuperAdminDevices from "./pages/SuperAdminDevices";
 import SuperAdminSettings from "./pages/SuperAdminSettings";
+import CaterflowDevices from "./pages/CaterflowDevices";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import PrivateRoute from "./components/PrivateRoute";
@@ -174,9 +175,11 @@ function App() {
           <Route path="device/:imei" element={<DeviceDetails />} />
           <Route path="settings" element={<Settings />} />
           <Route path="admin/users" element={<UserManagement />} />
+          <Route path="admin/caterflow" element={<CaterflowDevices />} />
           <Route path="super-admin" element={<SuperAdminDashboard />} />
           <Route path="super-admin/clients" element={<SuperAdminClients />} />
           <Route path="super-admin/devices" element={<SuperAdminDevices />} />
+          <Route path="super-admin/caterflow" element={<CaterflowDevices />} />
           <Route path="super-admin/settings" element={<SuperAdminSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

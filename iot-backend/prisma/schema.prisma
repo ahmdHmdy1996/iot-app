@@ -13,6 +13,12 @@ enum PlanType {
   PRO
 }
 
+// Source system for multi-tenancy
+enum SystemSource {
+  DEFAULT
+  CATERFLOW
+}
+
 // Type of alert for AlertLog (temperature bounds, offline, or battery)
 enum AlertType {
   TEMPERATURE_HIGH
@@ -71,6 +77,11 @@ model Device {
 
   userId    Int?
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Multi-tenancy / Source identification
+  source                SystemSource @default(DEFAULT)
+  externalRefId         String?      @map("external_ref_id") // ID in external system (e.g. restaurant ID)
+  caterflowRestaurantId String?      @map("caterflow_restaurant_id") // CaterFlow restaurant/tenant that owns this device
 
   // Alert thresholds (used to trigger alerts and validate readings)
   minTemp Float?

@@ -8,6 +8,7 @@ import {
   Settings,
   Users,
   Server,
+  Building2,
 } from "lucide-react";
 
 const Sidebar = () => {
@@ -27,14 +28,11 @@ const Sidebar = () => {
   const isSuperAdmin = role === "SUPER_ADMIN";
 
   const superAdminItems = [
-    { path: "/super-admin", label: t("nav.overview"), icon: LayoutDashboard },
-    { path: "/super-admin/clients", label: t("nav.clients"), icon: Users },
-    { path: "/super-admin/devices", label: t("nav.all_devices"), icon: Server },
-    {
-      path: "/super-admin/settings",
-      label: t("nav.system_settings"),
-      icon: Settings,
-    },
+    { path: "/super-admin",            label: t("nav.overview"),       icon: LayoutDashboard },
+    { path: "/super-admin/clients",    label: t("nav.clients"),        icon: Users           },
+    { path: "/super-admin/devices",    label: t("nav.all_devices"),    icon: Server          },
+    { path: "/super-admin/caterflow",  label: "أجهزة CaterFlow",      icon: Building2       },
+    { path: "/super-admin/settings",   label: t("nav.system_settings"), icon: Settings       },
   ];
 
   const baseItems = [
@@ -43,8 +41,9 @@ const Sidebar = () => {
   if (!isSuperAdmin) {
     if (role === "ADMIN") {
       baseItems.push(
-        { path: "/devices", label: t("nav.devices"), icon: MonitorSmartphone },
-        { path: "/admin/users", label: t("nav.users"), icon: Users },
+        { path: "/devices",             label: t("nav.devices"), icon: MonitorSmartphone },
+        { path: "/admin/users",         label: t("nav.users"),   icon: Users             },
+        { path: "/admin/caterflow",        label: "أجهزة CaterFlow", icon: Building2     },
       );
     } else {
       baseItems.push({
@@ -54,7 +53,7 @@ const Sidebar = () => {
       });
     }
     baseItems.push(
-      { path: "/audit", label: t("nav.audit"), icon: FileText },
+      { path: "/audit",    label: t("nav.audit"),    icon: FileText },
       { path: "/settings", label: t("nav.settings"), icon: Settings },
     );
   }

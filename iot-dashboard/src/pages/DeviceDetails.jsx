@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
+import { API_BASE_URL } from "../config/constants";
 import {
   AreaChart,
   Area,
@@ -88,6 +90,45 @@ const DeviceDetails = () => {
   const [openClearConfirm, setOpenClearConfirm] = useState(false);
   const [clearingAlerts, setClearingAlerts] = useState(false);
 
+  // ── Live Socket.io state (overrides polled API values when a packet arrives) ──
+  const [liveReading, setLiveReading] = useState(null); // { temperature, humidity, battery, timestamp }
+  const [liveIsOnline, setLiveIsOnline] = useState(false);
+  const socketRef = useRef(null);
+
+  useEffect(() => {
+    const socket = io(API_BASE_URL, {
+      transports: ["websocket"],
+      reconnectionAttempts: 5,
+    });
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log(`[Socket.io] DeviceDetails connected: ${socket.id}`);
+    });
+
+    socket.on("device_reading", (data) => {
+      // Only process packets belonging to this device page
+      if (data.imei !== imei) return;
+      console.log(`[Socket.io] Live reading for ${imei}:`, data.temperature, "°C");
+      setLiveReading({
+        temperature: data.temperature,
+        humidity: data.humidity,
+        battery: data.batteryLevel,
+        timestamp: data.timestamp,
+      });
+      setLiveIsOnline(true);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("[Socket.io] DeviceDetails disconnected");
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [imei]);
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const handleClearAlerts = async () => {
     setOpenClearConfirm(false);
     try {
@@ -155,9 +196,12 @@ const DeviceDetails = () => {
     fetchUsers();
   }, [fetchUsers]);
 
-  const currentTemp = dashboardData?.currentReading?.temperature ?? null;
-  const currentHumidity = dashboardData?.currentReading?.humidity ?? null;
-  const device = dashboardData?.device ?? null;
+  // Live socket values take priority; fall back to latest polled API snapshot
+  const currentTemp     = liveReading?.temperature ?? dashboardData?.currentReading?.temperature ?? null;
+  const currentHumidity = liveReading?.humidity    ?? dashboardData?.currentReading?.humidity    ?? null;
+  const device          = dashboardData?.device ?? null;
+  // Device is "online" the moment a live packet arrives, regardless of the DB flag
+  const isDeviceOffline = liveIsOnline ? false : (device?.isOffline ?? false);
 
   const tempColor =
     currentTemp == null
@@ -413,12 +457,12 @@ const DeviceDetails = () => {
             <div className="flex items-center justify-between gap-4">
               <div
                 className={`p-2 rounded-full shrink-0 ${
-                  device?.isOffline
+                  isDeviceOffline
                     ? "bg-slate-100 text-slate-500"
                     : "bg-emerald-50 text-emerald-600"
                 }`}
               >
-                {device?.isOffline ? (
+                {isDeviceOffline ? (
                   <WifiOff className="h-6 w-6" />
                 ) : (
                   <Wifi className="h-6 w-6" />
@@ -427,7 +471,7 @@ const DeviceDetails = () => {
               <div className="min-w-0">
                 <p className="text-sm text-slate-500 mb-1">حالة الجهاز</p>
                 <p className="text-2xl font-bold text-slate-900">
-                  {device?.isOffline ? "غير متصل" : "متصل"}
+                  {isDeviceOffline ? "غير متصل" : "متصل"}
                 </p>
               </div>
             </div>

@@ -4,6 +4,8 @@ import prisma from "../config/db.js";
 import { parseWf501Packet, isValidWf501Frame } from "./HexParser.js";
 import { sendWebhook } from "../utils/webhook.js";
 import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
+import { sendCaterflowWebhook, sendCaterflowReadingWebhook } from "../utils/webhook.util.js";
+import { getIO } from "../socket.js";
 
 /**
  * TCP Server for WF501 IoT Devices
@@ -274,6 +276,39 @@ class TCPServer {
         });
         console.log("[TCP] Reading saved to database");
 
+        // ── Socket.io: broadcast live reading to TempFlow dashboard ─────────
+        const socketPayload = {
+          imei: device.imei,
+          name: device.name ?? device.imei,
+          temperature: finalTemperature,
+          humidity: packet.humidityRh ?? null,
+          battery: packet.batteryPercent != null ? `${packet.batteryPercent}%` : null,
+          batteryLevel: packet.batteryPercent ?? null,
+          voltage: packet.batteryVolts ?? null,
+          timestamp: readingRecord.timestamp.toISOString(),
+        };
+        const io = getIO();
+        if (io) {
+          io.emit("device_reading", socketPayload);
+          console.log(`[Socket.io] Broadcasted device_reading for ${device.imei}`);
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ── CaterFlow Reading Webhook (real-time data) ─────────────────────
+        if (device.source === "CATERFLOW") {
+          sendCaterflowReadingWebhook({
+            imei: device.imei,
+            externalRefId: device.externalRefId,
+            temperature: finalTemperature,
+            humidity: packet.humidityRh,
+            battery: `${packet.batteryPercent}%`,
+            timestamp: readingRecord.timestamp.toISOString(),
+          }).catch((err) => {
+            console.warn("[TCP] CaterFlow reading webhook error:", err.message);
+          });
+        }
+
+
         // ── Alert evaluation (state-transition: only fire on change) ─────────
         const createdAlerts = [];
 
@@ -367,6 +402,27 @@ class TCPServer {
               },
             );
           }
+        }
+
+        // ── CaterFlow Integration (real-time webhook) ───────────────────────
+        if (createdAlerts.length > 0 && device.source === "CATERFLOW") {
+          createdAlerts.forEach((alert) => {
+            const threshold =
+              alert.alertType === "TEMPERATURE_HIGH"
+                ? device.maxTemp
+                : device.minTemp;
+
+            sendCaterflowWebhook({
+              imei: device.imei,
+              externalRefId: device.externalRefId,
+              alertType: alert.alertType,
+              currentValue: finalTemperature,
+              threshold: threshold,
+              timestamp: alert.timestamp.toISOString(),
+            }).catch((err) => {
+              console.warn("[TCP] CaterFlow webhook fire-and-forget error:", err.message);
+            });
+          });
         }
 
         // Send ACK immediately (do not wait for webhook)

@@ -40,6 +40,21 @@ async function main() {
   });
   console.log(`✅ Client user: ${clientUser.username}`);
 
+  // CaterFlow Master Account — unlimited devices for B2B integration
+  const caterflowPassword = await bcrypt.hash("caterflow_master_2026!", 10);
+  const caterflowMaster = await prisma.user.upsert({
+    where: { username: "caterflow_master" },
+    update: { maxDevices: 99999 },
+    create: {
+      username: "caterflow_master",
+      password: caterflowPassword,
+      role: "CLIENT",
+      maxDevices: 99999,
+      apiKey: "caterflow_master_api_key_b2b_2026",
+    },
+  });
+  console.log(`✅ CaterFlow Master account: ${caterflowMaster.username} (maxDevices: ${caterflowMaster.maxDevices})`);
+
   // 2. Create Devices
   const device1 = await prisma.device.upsert({
     where: { imei: "DEVICE_001" },

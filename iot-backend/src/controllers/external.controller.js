@@ -63,6 +63,25 @@ export async function getReadings(req, res) {
 }
 
 /**
+ * GET /api/external/devices/:imei/history
+ */
+export async function getDeviceHistory(req, res) {
+  try {
+    const result = await externalService.getDeviceHistory(
+      req.user.id,
+      req.params.imei,
+      req.query.limit,
+    );
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("External API history:", error);
+    res
+      .status(error.statusCode || 500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+}
+
+/**
  * GET /api/external/devices/:imei/alerts
  */
 export async function getAlerts(req, res) {

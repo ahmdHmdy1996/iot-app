@@ -56,6 +56,18 @@ export async function deleteUser(req, res) {
 
 // ─── Super Admin: Devices ───
 
+export async function getCaterflowDevices(req, res) {
+  try {
+    const devices = await deviceService.getCaterflowDevices();
+    res.json({ success: true, data: devices, total: devices.length });
+  } catch (error) {
+    console.error("Error fetching CaterFlow devices:", error);
+    res
+      .status(error.statusCode || 500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+}
+
 export async function getDevices(req, res) {
   try {
     const devices = await deviceService.getSuperAdminDevices();

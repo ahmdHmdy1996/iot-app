@@ -10,6 +10,7 @@ router.use(authenticateExternalApi);
 // Devices
 router.post("/devices/add", externalController.addDevice);
 router.patch("/devices/:imei", externalController.updateDevice);
+router.get("/devices/:imei/history", externalController.getDeviceHistory);
 router.get("/devices/:imei/readings", externalController.getReadings);
 router.get("/devices/:imei/alerts", externalController.getAlerts);
 

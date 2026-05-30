@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import app from "./app.js";
 import prisma from "./config/db.js";
 import TCPServer from "./tcp/TCPServer.js";
+import { initSocket } from "./socket.js";
 import {
   startOfflineChecker,
   stopOfflineChecker,
@@ -33,10 +34,11 @@ async function startServer() {
     await prisma.$connect();
     console.log("[DB] Prisma connected successfully.");
 
-    // Start HTTP server
-    app.listen(HTTP_PORT, () => {
+    // Start HTTP server and attach Socket.io to the same port
+    const httpServer = app.listen(HTTP_PORT, () => {
       console.log(`[SERVER] HTTP Server running on port ${HTTP_PORT}`);
     });
+    initSocket(httpServer);
 
     // Start TCP server for devices (logs "[TCP] TCP Server running on port X" when listening)
     const tcpServer = new TCPServer(TCP_PORT);

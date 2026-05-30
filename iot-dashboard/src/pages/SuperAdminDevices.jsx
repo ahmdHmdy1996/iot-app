@@ -67,6 +67,9 @@ const SuperAdminDevices = () => {
                     المالك
                   </TableHead>
                   <TableHead className="text-right font-medium text-slate-600">
+                    مطعم CaterFlow
+                  </TableHead>
+                  <TableHead className="text-right font-medium text-slate-600">
                     الحالة
                   </TableHead>
                   <TableHead className="text-right font-medium text-slate-600">
@@ -81,7 +84,7 @@ const SuperAdminDevices = () => {
                 {devices.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="text-center py-12 text-slate-500"
                     >
                       لا يوجد أجهزة
@@ -99,7 +102,19 @@ const SuperAdminDevices = () => {
                         </div>
                       </TableCell>
                       <TableCell className="text-right text-slate-700 font-medium">
-                        {device.user?.username || "غير محدد"}
+                        {device.assignedTo || device.user?.username || "غير محدد"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {device.caterflowRestaurantId ? (
+                          <Badge
+                            variant="outline"
+                            className="border-orange-300 bg-orange-50 text-orange-700 font-mono text-xs"
+                          >
+                            {device.caterflowRestaurantId}
+                          </Badge>
+                        ) : (
+                          <span className="text-slate-400 text-sm">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {device.isOffline ? (

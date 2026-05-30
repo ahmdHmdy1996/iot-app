@@ -6,8 +6,12 @@ import { API_BASE_URL, AUTH_TOKEN_KEY } from "../config/constants";
  */
 class ApiService {
   constructor() {
+    this._isRefreshing = false;
+    this._refreshQueue = []; // pending requests waiting for new token
+
     this.client = axios.create({
       baseURL: API_BASE_URL,
+      withCredentials: true, // send refresh_token cookie automatically
       headers: {
         "Content-Type": "application/json",
       },
@@ -22,17 +26,56 @@ class ApiService {
       return config;
     });
 
-    // Response interceptor
+    // Response interceptor: auto-refresh on 401
     this.client.interceptors.response.use(
       (response) => response.data,
-      (error) => {
-        if (error.response) {
-          if (error.response.status === 401) {
-            // Optional: Auto-logout logic
-            // localStorage.removeItem(AUTH_TOKEN_KEY);
-            // window.location.href = "/login";
-            return Promise.reject(new Error("Unauthorized. Please log in."));
+      async (error) => {
+        const originalRequest = error.config;
+
+        if (
+          error.response?.status === 401 &&
+          !originalRequest._retry &&
+          !originalRequest.url?.includes("/auth/refresh") &&
+          !originalRequest.url?.includes("/auth/login")
+        ) {
+          // If already refreshing, queue this request
+          if (this._isRefreshing) {
+            return new Promise((resolve, reject) => {
+              this._refreshQueue.push({ resolve, reject });
+            }).then((token) => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              return this.client(originalRequest).then((r) => r);
+            });
           }
+
+          originalRequest._retry = true;
+          this._isRefreshing = true;
+
+          try {
+            const { token, user } = await this.client.post("/auth/refresh");
+            localStorage.setItem(AUTH_TOKEN_KEY, token);
+            if (user) localStorage.setItem("user", JSON.stringify(user));
+
+            this._refreshQueue.forEach(({ resolve }) => resolve(token));
+            this._refreshQueue = [];
+
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return this.client(originalRequest).then((r) => r);
+          } catch {
+            this._refreshQueue.forEach(({ reject }) =>
+              reject(new Error("Session expired. Please log in again."))
+            );
+            this._refreshQueue = [];
+            localStorage.removeItem(AUTH_TOKEN_KEY);
+            localStorage.removeItem("user");
+            window.location.href = "/login";
+            return Promise.reject(new Error("Session expired. Please log in again."));
+          } finally {
+            this._isRefreshing = false;
+          }
+        }
+
+        if (error.response) {
           throw new Error(error.response.data?.message || "Server error");
         } else if (error.request) {
           throw new Error("No response from server. Check connection.");
@@ -50,6 +93,19 @@ class ApiService {
    */
   async login(credentials) {
     return await this.client.post("/auth/login", credentials);
+  }
+
+  /**
+   * Logout: clears refresh token cookie on server + local storage
+   */
+  async logout() {
+    try {
+      await this.client.post("/auth/logout");
+    } catch {
+      // ignore errors, clear local state regardless
+    }
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem("user");
   }
 
   /**
@@ -159,6 +215,14 @@ class ApiService {
    */
   async getAllSystemDevices() {
     return await this.client.get("/api/admin/devices");
+  }
+
+  /**
+   * CaterFlow B2B devices — accessible to both ADMIN and SUPER_ADMIN
+   * Endpoint: GET /admin/caterflow-devices (admin router, authorizeRole ADMIN|SUPER_ADMIN)
+   */
+  async getCaterflowDevices() {
+    return await this.client.get("/admin/caterflow-devices");
   }
 
   /**

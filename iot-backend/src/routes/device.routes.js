@@ -1,15 +1,21 @@
 import express from "express";
 import {
-  authMiddleware,
-  authorizeRole,
-} from "../middlewares/auth.middleware.js";
+  hybridAuthMiddleware,
+  systemAuthMiddleware,
+} from "../middlewares/systemAuth.middleware.js";
+import { authorizeRole } from "../middlewares/auth.middleware.js";
 import * as deviceController from "../controllers/device.controller.js";
 
 const router = express.Router();
 
-// Protect all routes: JWT auth + CLIENT/ADMIN role
-router.use(authMiddleware);
-router.use(authorizeRole(["CLIENT", "ADMIN"]));
+// Hybrid Auth: allow either User JWT OR System API Key
+router.use(hybridAuthMiddleware);
+
+// If it's a normal user (not system auth), enforce CLIENT/ADMIN roles
+router.use((req, res, next) => {
+  if (req.isSystemAuth) return next();
+  return authorizeRole(["CLIENT", "ADMIN"])(req, res, next);
+});
 
 // POST /api/my-devices/add (must be before /:imei to avoid conflict)
 router.post("/add", deviceController.addUserDevice);

@@ -4,7 +4,10 @@ import * as deviceService from "../services/device.service.js";
 
 export async function getUserDevices(req, res) {
   try {
-    const data = await deviceService.getUserDevices(req.user.id);
+    // If system auth, userId is optional (can filter by source/externalRefId instead)
+    const userId = req.user?.id || (req.query.userId ? Number(req.query.userId) : undefined);
+    
+    const data = await deviceService.getUserDevices(userId, req.query);
     res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching user devices:", error);
@@ -16,11 +19,25 @@ export async function getUserDevices(req, res) {
 
 export async function addUserDevice(req, res) {
   try {
-    const device = await deviceService.addUserDevice(req.user.id, req.body);
+    const userId = req.user?.id || (req.body.userId ? Number(req.body.userId) : null);
+    
+    if (!userId && !req.isSystemAuth) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    const device = await deviceService.addUserDevice(userId, req.body);
     res
       .status(201)
       .json({ success: true, message: "Device added successfully", device });
   } catch (error) {
+    // Handle Prisma Unique Constraint Violation (duplicate IMEI)
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        success: false,
+        message: "Device with this IMEI already exists.",
+      });
+    }
+
     console.error("Error adding device:", error);
     res
       .status(error.statusCode || 500)
@@ -122,6 +139,18 @@ export async function getAllAdminDevices(req, res) {
     res.json({ success: true, data });
   } catch (error) {
     console.error("Error fetching all devices:", error);
+    res
+      .status(error.statusCode || 500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+}
+
+export async function getCaterflowDevices(req, res) {
+  try {
+    const data = await deviceService.getCaterflowDevices();
+    res.json({ success: true, data, total: data.length });
+  } catch (error) {
+    console.error("Error fetching CaterFlow devices:", error);
     res
       .status(error.statusCode || 500)
       .json({ success: false, message: error.message || "Server error" });

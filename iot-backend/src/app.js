@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 
 // Route modules
@@ -15,6 +16,10 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import auditReportRoutes from "./routes/auditReport.routes.js";
 import externalRoutes from "./routes/external.routes.js";
 
+// Controllers & middleware used for inline routes
+import { getCaterflowDevices } from "./controllers/device.controller.js";
+import { authMiddleware, authorizeRole } from "./middlewares/auth.middleware.js";
+
 // Middlewares
 import {
   notFoundHandler,
@@ -27,7 +32,8 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors()); // Allow all origins (temp fix for production)
+app.use(cors({ origin: true, credentials: true }));
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -41,7 +47,7 @@ app.use((req, res, next) => {
 
 // Routes (order matters: more specific paths first)
 app.use("/auth", authRoutes);
-app.use("/admin", adminRoutes);
+app.use("/admin", adminRoutes);      // includes /admin/caterflow-devices (ADMIN + SUPER_ADMIN)
 app.use("/api/admin", superAdminRoutes);
 app.use("/api/external", externalRoutes);
 app.use("/api/my-devices", deviceRoutes);
@@ -60,6 +66,14 @@ app.get("/health", (req, res) => {
     timestamp: new Date(),
   });
 });
+
+// ── CaterFlow B2B devices — ADMIN only (same as all /admin/* routes) ──
+app.get(
+  "/admin/caterflow-devices",
+  authMiddleware,
+  authorizeRole(["ADMIN"]),
+  getCaterflowDevices,
+);
 
 // 404 handler
 app.use(notFoundHandler);

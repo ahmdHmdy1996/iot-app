@@ -31,9 +31,15 @@ export async function getSuperAdminDevices() {
 /**
  * List all devices for the logged-in user.
  */
-export async function getUserDevices(userId) {
+export async function getUserDevices(userId, query = {}) {
+  const { source, externalRefId } = query;
+
+  const where = { userId };
+  if (source) where.source = source;
+  if (externalRefId) where.externalRefId = externalRefId;
+
   const devices = await prisma.device.findMany({
-    where: { userId },
+    where,
     include: {
       readings: {
         orderBy: { timestamp: "desc" },
@@ -59,10 +65,12 @@ export async function getUserDevices(userId) {
 
 /**
  * Client adds a device (enforces maxDevices).
+ * Triggers CaterFlow Master bypass if source === "CATERFLOW" OR caterflowRestaurantId
+ * is provided — whichever arrives first acts as the B2B signal.
  */
 export async function addUserDevice(
   userId,
-  { imei, name, minTemp, maxTemp, calibrationOffset },
+  { imei, name, minTemp, maxTemp, calibrationOffset, source, externalRefId, caterflowRestaurantId },
 ) {
   if (!imei || typeof imei !== "string" || !imei.trim()) {
     const err = new Error("IMEI is required");
@@ -70,23 +78,51 @@ export async function addUserDevice(
     throw err;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { _count: { select: { devices: true } } },
-  });
-  if (!user) {
-    const err = new Error("User not found");
-    err.statusCode = 404;
-    throw err;
-  }
+  let resolvedUserId = userId;
 
-  if (user._count.devices >= user.maxDevices) {
-    const err = new Error(
-      `You have reached your device limit (${user.maxDevices}). Upgrade your plan to add more devices.`,
-    );
-    err.statusCode = 400;
-    throw err;
+  // ── B2B: CaterFlow Master Account bypass ────────────────────────────────
+  // Triggered by EITHER signal:
+  //   • source === "CATERFLOW"      — always sent by CaterFlow (primary trigger)
+  //   • caterflowRestaurantId       — present when tenant ID is known (secondary)
+  // Using both makes the bypass robust even if one field is missing.
+  const isCaterflowRequest = source === "CATERFLOW" || Boolean(caterflowRestaurantId);
+
+  if (isCaterflowRequest) {
+    const masterUser = await prisma.user.findUnique({
+      where: { username: "caterflow_master" },
+    });
+
+    // Hard fail with a clear message — never let a null ID reach Prisma
+    if (!masterUser) {
+      const err = new Error(
+        "CaterFlow Master user not found in TempFlow DB. Please run the seed: node prisma/seed.js",
+      );
+      err.statusCode = 500;
+      throw err;
+    }
+
+    resolvedUserId = masterUser.id; // guaranteed non-null from this point
+    source = "CATERFLOW";           // normalise source regardless of which trigger fired
+  } else {
+    // Standard flow: enforce per-user device limit
+    const user = await prisma.user.findUnique({
+      where: { id: resolvedUserId },
+      include: { _count: { select: { devices: true } } },
+    });
+    if (!user) {
+      const err = new Error("User not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (user._count.devices >= user.maxDevices) {
+      const err = new Error(
+        `You have reached your device limit (${user.maxDevices}). Upgrade your plan to add more devices.`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
   }
+  // ────────────────────────────────────────────────────────────────────────
 
   try {
     const device = await prisma.device.create({
@@ -99,16 +135,20 @@ export async function addUserDevice(
           calibrationOffset != null && calibrationOffset !== ""
             ? Number(calibrationOffset)
             : 0,
+        source: source || "DEFAULT",
+        externalRefId: externalRefId || null,
+        caterflowRestaurantId: caterflowRestaurantId || null,
         isActive: true,
-        userId,
+        userId: resolvedUserId,
       },
     });
 
     return device;
   } catch (error) {
     if (error.code === "P2002") {
-      const err = new Error("A device with this IMEI already exists");
+      const err = new Error("Device with this IMEI already exists.");
       err.statusCode = 400;
+      err.code = "P2002"; // Preserve the code for the controller
       throw err;
     }
     throw error;
@@ -249,8 +289,9 @@ export async function createAdminDevice({
     return newDevice;
   } catch (error) {
     if (error.code === "P2002") {
-      const err = new Error("Device with this IMEI already exists");
+      const err = new Error("Device with this IMEI already exists.");
       err.statusCode = 400;
+      err.code = "P2002";
       throw err;
     }
     throw error;
@@ -390,8 +431,52 @@ export async function getAllAdminDevicesList() {
     batteryLevel: d.batteryLevel,
     isOffline: d.isOffline,
     assignedTo: d.user?.username || "Unassigned",
+    source: d.source,
+    caterflowRestaurantId: d.caterflowRestaurantId || null,
     lastOnline: d.readings[0]?.timestamp || null,
     latestTemp: d.readings[0]?.temperature || null,
+  }));
+}
+
+/**
+ * Super Admin: fetch every device that was registered by CaterFlow.
+ * Matches on source = 'CATERFLOW' OR caterflowRestaurantId IS NOT NULL
+ * (dual-filter matches both registration paths).
+ */
+export async function getCaterflowDevices() {
+  const devices = await prisma.device.findMany({
+    where: {
+      OR: [
+        { source: "CATERFLOW" },
+        { caterflowRestaurantId: { not: null } },
+      ],
+    },
+    include: {
+      user: { select: { username: true } },
+      readings: {
+        orderBy: { timestamp: "desc" },
+        take: 1,
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return devices.map((d) => ({
+    imei:                  d.imei,
+    name:                  d.name,
+    isActive:              d.isActive,
+    isOffline:             d.isOffline,
+    minTemp:               d.minTemp,
+    maxTemp:               d.maxTemp,
+    batteryLevel:          d.batteryLevel,
+    source:                d.source,
+    caterflowRestaurantId: d.caterflowRestaurantId ?? null,
+    externalRefId:         d.externalRefId ?? null,
+    lastAlertStatus:       d.lastAlertStatus,
+    lastOnline:            d.readings[0]?.timestamp ?? null,
+    latestTemp:            d.readings[0]?.temperature ?? null,
+    latestHumidity:        d.readings[0]?.humidity ?? null,
+    createdAt:             d.createdAt,
   }));
 }
 

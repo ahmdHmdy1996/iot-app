@@ -2,11 +2,34 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import prisma from "../config/db.js";
 
+const ACCESS_TOKEN_EXPIRY = "15m";
+const REFRESH_TOKEN_EXPIRY = "7d";
+const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+function generateTokens(user) {
+  const jwtSecret = process.env.JWT_SECRET;
+  const refreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret + "_refresh";
+
+  const payload = { id: user.id, username: user.username, role: user.role };
+
+  const accessToken = jwt.sign(payload, jwtSecret, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: REFRESH_TOKEN_EXPIRY });
+
+  return { accessToken, refreshToken };
+}
+
+export function setRefreshTokenCookie(res, refreshToken) {
+  res.cookie("refresh_token", refreshToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: REFRESH_TOKEN_EXPIRY_MS,
+    path: "/",
+  });
+}
+
 /**
- * Login user: validate credentials and return JWT + user info.
- * @param {string} username
- * @param {string} password
- * @returns {{ token: string, user: { id, username, role } }}
+ * Login user: validate credentials and return access token + set refresh token cookie.
  */
 export async function loginUser(username, password) {
   const jwtSecret = process.env.JWT_SECRET;
@@ -25,9 +48,7 @@ export async function loginUser(username, password) {
 
   console.log(`[Auth] Login attempt for user: ${username}`);
 
-  const user = await prisma.user.findUnique({
-    where: { username },
-  });
+  const user = await prisma.user.findUnique({ where: { username } });
 
   if (!user) {
     console.log(`[Auth] User not found: ${username}`);
@@ -35,44 +56,65 @@ export async function loginUser(username, password) {
     err.statusCode = 401;
     throw err;
   }
-  console.log(`[Auth] 1. User found: ${user.username} (ID: ${user.id})`);
 
   const isValid = await bcrypt.compare(password, user.password);
-
   if (!isValid) {
     console.log(`[Auth] Password mismatch for user: ${username}`);
     const err = new Error("بيانات الدخول غير صحيحة.");
     err.statusCode = 401;
     throw err;
   }
-  console.log(`[Auth] 2. Password match confirmed.`);
 
-  const token = jwt.sign(
-    {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-    },
-    jwtSecret,
-    { expiresIn: "24h" },
-  );
-  console.log(`[Auth] 3. JWT generated successfully.`);
+  const { accessToken, refreshToken } = generateTokens(user);
+  console.log(`[Auth] Tokens generated for user: ${username}`);
 
   return {
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-    },
+    token: accessToken,
+    refreshToken,
+    user: { id: user.id, username: user.username, role: user.role },
   };
 }
 
 /**
- * Register a new CLIENT user and return JWT (auto-login).
- * @param {string} username
- * @param {string} password
- * @returns {{ token: string, user: { id, username, role } }}
+ * Refresh: verify refresh token cookie and return new access token.
+ */
+export async function refreshAccessToken(refreshToken) {
+  const jwtSecret = process.env.JWT_SECRET;
+  const refreshSecret = process.env.JWT_REFRESH_SECRET || jwtSecret + "_refresh";
+
+  if (!refreshToken) {
+    const err = new Error("No refresh token provided.");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(refreshToken, refreshSecret);
+  } catch {
+    const err = new Error("Refresh token expired or invalid. Please log in again.");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+  if (!user) {
+    const err = new Error("User not found.");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
+
+  return {
+    token: accessToken,
+    refreshToken: newRefreshToken,
+    user: { id: user.id, username: user.username, role: user.role },
+  };
+}
+
+/**
+ * Register a new CLIENT user and return tokens.
  */
 export async function registerUser(username, password) {
   const jwtSecret = process.env.JWT_SECRET;
@@ -95,10 +137,7 @@ export async function registerUser(username, password) {
     throw err;
   }
 
-  const existingUser = await prisma.user.findUnique({
-    where: { username },
-  });
-
+  const existingUser = await prisma.user.findUnique({ where: { username } });
   if (existingUser) {
     const err = new Error("اسم المستخدم مسجل بالفعل.");
     err.statusCode = 409;
@@ -106,32 +145,15 @@ export async function registerUser(username, password) {
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
-
   const user = await prisma.user.create({
-    data: {
-      username,
-      password: hashedPassword,
-      role: "CLIENT",
-      plan: "BASIC",
-    },
+    data: { username, password: hashedPassword, role: "CLIENT", plan: "BASIC" },
   });
 
-  const token = jwt.sign(
-    {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-    },
-    jwtSecret,
-    { expiresIn: "24h" },
-  );
+  const { accessToken, refreshToken } = generateTokens(user);
 
   return {
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-    },
+    token: accessToken,
+    refreshToken,
+    user: { id: user.id, username: user.username, role: user.role },
   };
 }
