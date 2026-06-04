@@ -71,6 +71,8 @@ export async function getDeviceHistory(req, res) {
       req.user.id,
       req.params.imei,
       req.query.limit,
+      req.query.from,
+      req.query.to,
     );
     res.json({ success: true, ...result });
   } catch (error) {

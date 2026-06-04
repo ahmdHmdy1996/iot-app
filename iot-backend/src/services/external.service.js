@@ -156,7 +156,7 @@ export async function getExternalReadings(userId, imei, limit = 50) {
  * Each reading is annotated with a derived `alertStatus` so the CaterFlow
  * frontend can colour-code rows without a separate alerts query.
  */
-export async function getDeviceHistory(userId, imei, limit = 100) {
+export async function getDeviceHistory(userId, imei, limit = 100, from, to) {
   const rawLimit = parseInt(limit, 10);
   const safeLimit = Number.isNaN(rawLimit)
     ? 100
@@ -174,9 +174,19 @@ export async function getDeviceHistory(userId, imei, limit = 100) {
     throw err;
   }
 
+  const hasDateRange = from && to;
+  const where = { deviceImei: imei };
+  if (hasDateRange) {
+    const fromDate = new Date(from);
+    const toDate   = new Date(to);
+    if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+      where.timestamp = { gte: fromDate, lte: toDate };
+    }
+  }
+
   const readings = await prisma.reading.findMany({
-    where: { deviceImei: imei },
-    take: safeLimit,
+    where,
+    ...(hasDateRange ? {} : { take: safeLimit }),
     orderBy: { timestamp: "desc" },
   });
 
