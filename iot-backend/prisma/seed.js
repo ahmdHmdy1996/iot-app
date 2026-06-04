@@ -44,7 +44,7 @@ async function main() {
   const caterflowPassword = await bcrypt.hash("caterflow_master_2026!", 10);
   const caterflowMaster = await prisma.user.upsert({
     where: { username: "caterflow_master" },
-    update: { maxDevices: 99999 },
+    update: { maxDevices: 99999, apiKey: "caterflow_master_api_key_b2b_2026" },
     create: {
       username: "caterflow_master",
       password: caterflowPassword,
