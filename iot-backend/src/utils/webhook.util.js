@@ -107,16 +107,15 @@ export const sendCaterflowReadingWebhook = async (readingData) => {
     }
   };
 
+  console.log(`[CaterFlow-Reading-Webhook] → POST ${url} | imei=${readingData.imei} temp=${payload.reading.temperature}`);
+
   try {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
 
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Source-System": "IoT-Backend"
-      },
+      headers: { "Content-Type": "application/json", "X-Source-System": "IoT-Backend" },
       body: JSON.stringify(payload),
       signal: controller.signal
     });
@@ -124,15 +123,17 @@ export const sendCaterflowReadingWebhook = async (readingData) => {
     clearTimeout(id);
 
     if (!response.ok) {
-      console.warn(`[CaterFlow-Reading-Webhook] Delivery failed: ${response.status} ${response.statusText}`);
+      let body = "";
+      try { body = await response.text(); } catch {}
+      console.warn(`[CaterFlow-Reading-Webhook] ✗ ${response.status} ${response.statusText} | body: ${body}`);
     } else {
-      console.log(`[CaterFlow-Reading-Webhook] Reading successfully delivered to ${url}`);
+      console.log(`[CaterFlow-Reading-Webhook] ✓ Delivered to ${url}`);
     }
   } catch (error) {
     if (error.name === "AbortError") {
-      console.error("[CaterFlow-Reading-Webhook] Error: Request timed out.");
+      console.error(`[CaterFlow-Reading-Webhook] ✗ Timeout after ${WEBHOOK_TIMEOUT}ms → ${url}`);
     } else {
-      console.error("[CaterFlow-Reading-Webhook] Error sending reading webhook:", error.message);
+      console.error(`[CaterFlow-Reading-Webhook] ✗ ${error.message} → ${url}`);
     }
   }
 };
