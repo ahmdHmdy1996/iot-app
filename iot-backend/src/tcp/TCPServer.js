@@ -4,7 +4,7 @@ import prisma from "../config/db.js";
 import { parseWf501Packet, isValidWf501Frame } from "./HexParser.js";
 import { sendWebhook } from "../utils/webhook.js";
 import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
-import { sendCaterflowWebhook, sendCaterflowReadingWebhook } from "../utils/webhook.util.js";
+import { sendCaterflowWebhook, sendCaterflowReadingWebhook, sendCaterflowStatusWebhook } from "../utils/webhook.util.js";
 import { getIO } from "../socket.js";
 
 /**
@@ -16,6 +16,7 @@ class TCPServer {
     this.port = port;
     this.server = null;
     this.clientBuffers = new Map(); // Store buffers per client socket
+    this.socketImei = new Map(); // Map socket → device IMEI (set once identified)
   }
 
   /**
@@ -40,13 +41,13 @@ class TCPServer {
       // Handle connection errors
       socket.on("error", (error) => {
         console.error("[TCP] Socket error:", error.message);
-        this.clientBuffers.delete(socket);
+        this.handleDisconnect(socket, clientId);
       });
 
       // Handle disconnection
       socket.on("close", () => {
         console.log(`[TCP] Device disconnected: ${clientId}`);
-        this.clientBuffers.delete(socket);
+        this.handleDisconnect(socket, clientId);
       });
     });
 
@@ -57,6 +58,39 @@ class TCPServer {
     this.server.on("error", (error) => {
       console.error("[TCP] Server error:", error);
     });
+  }
+
+  /**
+   * Clean up a dropped connection and flag its device offline immediately.
+   * The IMEI is known only after the device has sent at least one valid packet;
+   * connections that never identified themselves are simply discarded.
+   * @param {net.Socket} socket
+   * @param {string} clientId
+   */
+  async handleDisconnect(socket, clientId) {
+    this.clientBuffers.delete(socket);
+    const imei = this.socketImei.get(socket);
+    this.socketImei.delete(socket);
+    if (!imei) return; // never identified — nothing to mark offline
+
+    try {
+      const device = await prisma.device.findUnique({ where: { imei } });
+      if (!device || device.isOffline) return; // already offline / gone
+
+      await prisma.device.update({
+        where: { imei },
+        data: { isOffline: true },
+      });
+      console.log(`[TCP] Marked ${imei} offline (disconnect from ${clientId})`);
+
+      if (device.source === "CATERFLOW") {
+        sendCaterflowStatusWebhook(imei, false).catch((err) =>
+          console.warn("[TCP] CaterFlow offline webhook error:", err?.message),
+        );
+      }
+    } catch (err) {
+      console.warn(`[TCP] handleDisconnect error for ${imei}:`, err?.message);
+    }
   }
 
   /**
@@ -224,6 +258,21 @@ class TCPServer {
         }
 
         console.log(`[TCP] Device verified: ${device.name || device.imei}`);
+
+        // Remember which device owns this socket so we can flag it offline the
+        // instant the connection drops (see handleDisconnect).
+        this.socketImei.set(socket, device.imei);
+
+        // A fresh packet means the device is back online — clear any stale
+        // offline flag and notify CaterFlow so its card flips green immediately.
+        if (device.isOffline) {
+          await prisma.device
+            .update({ where: { imei: device.imei }, data: { isOffline: false } })
+            .catch(() => {});
+          if (device.source === "CATERFLOW") {
+            sendCaterflowStatusWebhook(device.imei, true).catch(() => {});
+          }
+        }
 
         // Apply calibration: finalTemperature = raw + offset
         const rawTemp = packet.temperatureC ?? 0;

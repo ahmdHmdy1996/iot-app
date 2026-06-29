@@ -1,4 +1,5 @@
 import * as externalService from "../services/external.service.js";
+import { sendCaterflowDeleteWebhook } from "../utils/webhook.util.js";
 
 /**
  * POST /api/external/devices/add
@@ -37,6 +38,29 @@ export async function updateDevice(req, res) {
     res.json({ success: true, message: "Device updated", device });
   } catch (error) {
     console.error("External API update device:", error);
+    res
+      .status(error.statusCode || 500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+}
+
+/**
+ * DELETE /api/external/devices/:imei
+ */
+export async function deleteDevice(req, res) {
+  try {
+    const device = await externalService.deleteExternalDevice(
+      req.user.id,
+      req.params.imei,
+    );
+    res.json({ success: true, message: "Device deleted" });
+    // Notify CaterFlow so its mirror is removed too. Idempotent: a no-op when
+    // CaterFlow initiated the delete (it already dropped its local record).
+    if (device?.source === "CATERFLOW") {
+      sendCaterflowDeleteWebhook(req.params.imei).catch(() => undefined);
+    }
+  } catch (error) {
+    console.error("External API delete device:", error);
     res
       .status(error.statusCode || 500)
       .json({ success: false, message: error.message || "Server error" });

@@ -1,0 +1,24 @@
+# Local simulation override — wires TempFlow to a locally-running CaterFlow over
+# a shared Docker network, mirroring the single-VPS setup (container-to-container).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.sim.yml up -d --build
+services:
+  iot_backend:
+    environment:
+      # Deliver webhooks straight to CaterFlow's backend container by its network
+      # alias on the shared network — not host.docker.internal, which collides
+      # with a host-native node process on :3000 on this machine.
+      CATERFLOW_WEBHOOK_URL: http://caterflow-backend:3000/api/iot/webhooks
+    networks:
+      - iot_net
+      - sim_net
+
+  iot_frontend:
+    build:
+      args:
+        # Dashboard is served to the browser, so it must reach the API on the
+        # host's published port, not an internal container name.
+        VITE_API_URL: http://localhost:3005
+
+networks:
+  sim_net:
+    external: true

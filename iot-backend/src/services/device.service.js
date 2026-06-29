@@ -1,4 +1,5 @@
 import prisma from "../config/db.js";
+import { sendCaterflowDeleteWebhook } from "../utils/webhook.util.js";
 
 // ─── Helper: verify device ownership ───
 
@@ -231,6 +232,13 @@ export async function deleteUserDevice(userId, imei) {
     }
     throw error;
   }
+
+  // Keep CaterFlow's mirror in sync when a CaterFlow-sourced device is removed.
+  if (device.source === "CATERFLOW") {
+    sendCaterflowDeleteWebhook(imei).catch((err) =>
+      console.warn("[device.service] CaterFlow delete webhook error:", err?.message),
+    );
+  }
 }
 
 // ─── Admin Devices (ADMIN role) ───
@@ -338,6 +346,8 @@ export async function updateAdminDevice(
  * Admin deletes a device.
  */
 export async function deleteAdminDevice(imei) {
+  // Load first so we know whether to notify CaterFlow after deletion.
+  const device = await prisma.device.findUnique({ where: { imei } });
   try {
     await prisma.device.delete({ where: { imei } });
   } catch (error) {
@@ -347,6 +357,12 @@ export async function deleteAdminDevice(imei) {
       throw err;
     }
     throw error;
+  }
+
+  if (device?.source === "CATERFLOW") {
+    sendCaterflowDeleteWebhook(imei).catch((err) =>
+      console.warn("[device.service] CaterFlow delete webhook error:", err?.message),
+    );
   }
 }
 

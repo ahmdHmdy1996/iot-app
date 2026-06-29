@@ -119,6 +119,27 @@ export async function updateExternalDevice(
 }
 
 /**
+ * Delete a device via external API (CaterFlow). Device must belong to user.
+ * Returns the deleted device so the caller can decide on follow-up actions.
+ */
+export async function deleteExternalDevice(userId, imei) {
+  const { device, notFound, forbidden } = await getDeviceForUser(imei, userId);
+  if (notFound) {
+    const err = new Error("Device not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (forbidden) {
+    const err = new Error("Access denied to this device");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  await prisma.device.delete({ where: { imei } });
+  return device;
+}
+
+/**
  * Get readings via external API. Device must belong to user.
  */
 export async function getExternalReadings(userId, imei, limit = 50) {

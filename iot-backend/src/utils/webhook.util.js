@@ -67,6 +67,87 @@ export const sendCaterflowWebhook = async (alertData) => {
   }
 };
 /**
+ * Notifies CaterFlow that a device was deleted on the TempFlow side, so it can
+ * remove its local mirror. Fire-and-forget; never throws.
+ *
+ * @param {string} imei - Device IMEI that was deleted
+ */
+export const sendCaterflowDeleteWebhook = async (imei) => {
+  const url = process.env.CATERFLOW_WEBHOOK_URL;
+  if (!url) {
+    console.warn("[CaterFlow-Delete-Webhook] Skipping: CATERFLOW_WEBHOOK_URL is not configured.");
+    return;
+  }
+
+  const payload = {
+    event: "device_deleted",
+    deleted: { imei: String(imei) },
+    system: "iot-monitor-v1",
+  };
+
+  console.log(`[CaterFlow-Delete-Webhook] → POST ${url} | imei=${imei}`);
+
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Source-System": "IoT-Backend" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    if (!response.ok) {
+      console.warn(`[CaterFlow-Delete-Webhook] ✗ ${response.status} ${response.statusText}`);
+    } else {
+      console.log(`[CaterFlow-Delete-Webhook] ✓ Delivered to ${url}`);
+    }
+  } catch (error) {
+    console.error(`[CaterFlow-Delete-Webhook] ✗ ${error.message} → ${url}`);
+  }
+};
+
+/**
+ * Notifies CaterFlow of a device connectivity change (online/offline) so its UI
+ * can flip the card instantly instead of waiting for the freshness window.
+ * Fire-and-forget; never throws.
+ *
+ * @param {string} imei - Device IMEI
+ * @param {boolean} online - true = reconnected, false = disconnected
+ */
+export const sendCaterflowStatusWebhook = async (imei, online) => {
+  const url = process.env.CATERFLOW_WEBHOOK_URL;
+  if (!url) return;
+
+  const payload = {
+    event: "device_status",
+    status: { imei: String(imei), online: Boolean(online) },
+    system: "iot-monitor-v1",
+  };
+
+  console.log(`[CaterFlow-Status-Webhook] → ${url} | imei=${imei} online=${online}`);
+
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Source-System": "IoT-Backend" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    if (!response.ok) {
+      console.warn(`[CaterFlow-Status-Webhook] ✗ ${response.status} ${response.statusText}`);
+    } else {
+      console.log(`[CaterFlow-Status-Webhook] ✓ Delivered (${online ? "online" : "offline"})`);
+    }
+  } catch (error) {
+    console.error(`[CaterFlow-Status-Webhook] ✗ ${error.message}`);
+  }
+};
+
+/**
  * Sends a POST request to CaterFlow when a real-time reading is received.
  * 
  * @param {Object} readingData - Data related to the device reading
