@@ -61,36 +61,22 @@ class TCPServer {
   }
 
   /**
-   * Clean up a dropped connection and flag its device offline immediately.
-   * The IMEI is known only after the device has sent at least one valid packet;
-   * connections that never identified themselves are simply discarded.
+   * Clean up a dropped connection's bookkeeping.
+   *
+   * IMPORTANT: this WF501 hardware does not hold a persistent socket — it
+   * connects, sends one packet, and disconnects, repeating on its configured
+   * reporting interval (as fast as every ~60s). A TCP close here is the
+   * device's *normal* per-reading behavior, not a connectivity failure, so it
+   * must NOT be used to flag the device offline (that previously caused the
+   * status to flap online/offline every cycle). True offline detection is
+   * staleness-based — see jobs/offlineChecker.js, which flags a device only
+   * after it has gone quiet for OFFLINE_THRESHOLD_MS with no reading at all.
    * @param {net.Socket} socket
    * @param {string} clientId
    */
-  async handleDisconnect(socket, clientId) {
+  handleDisconnect(socket, clientId) {
     this.clientBuffers.delete(socket);
-    const imei = this.socketImei.get(socket);
     this.socketImei.delete(socket);
-    if (!imei) return; // never identified — nothing to mark offline
-
-    try {
-      const device = await prisma.device.findUnique({ where: { imei } });
-      if (!device || device.isOffline) return; // already offline / gone
-
-      await prisma.device.update({
-        where: { imei },
-        data: { isOffline: true },
-      });
-      console.log(`[TCP] Marked ${imei} offline (disconnect from ${clientId})`);
-
-      if (device.source === "CATERFLOW") {
-        sendCaterflowStatusWebhook(imei, false).catch((err) =>
-          console.warn("[TCP] CaterFlow offline webhook error:", err?.message),
-        );
-      }
-    } catch (err) {
-      console.warn(`[TCP] handleDisconnect error for ${imei}:`, err?.message);
-    }
   }
 
   /**

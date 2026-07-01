@@ -6,6 +6,7 @@
 import cron from "node-cron";
 import prisma from "../config/db.js";
 import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
+import { sendCaterflowStatusWebhook } from "../utils/webhook.util.js";
 
 const OFFLINE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
 const OFFLINE_MESSAGE =
@@ -42,6 +43,15 @@ async function runOfflineCheck() {
           resolved: false,
         },
       });
+
+      if (device.source === "CATERFLOW") {
+        sendCaterflowStatusWebhook(device.imei, false).catch((err) =>
+          console.warn(
+            "[OfflineChecker] CaterFlow offline webhook error:",
+            err?.message,
+          ),
+        );
+      }
 
       const deviceLabel = device.name || device.imei;
       const alertMessage = `🚨 نظام التنبيهات | Offline: Device [${deviceLabel}] has not sent data for over 15 minutes.`;
