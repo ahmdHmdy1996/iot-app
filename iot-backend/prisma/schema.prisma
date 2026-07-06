@@ -23,6 +23,7 @@ enum SystemSource {
 enum AlertType {
   TEMPERATURE_HIGH
   TEMPERATURE_LOW
+  TEMPERATURE_NORMAL // recovery: back inside range after HIGH/LOW
   OFFLINE
   BATTERY_LOW
   BATTERY_CRITICAL
@@ -93,6 +94,11 @@ model Device {
   // Status
   batteryLevel Float?  // 0–100 or null if unknown
   isOffline    Boolean @default(false)
+
+  // Last time ANY valid packet was received (independent of whether a Reading
+  // row was persisted — reading storage is thinned to skip near-duplicate
+  // values, so offline detection must not depend on the readings table).
+  lastSeenAt DateTime?
 
   // Deduplication state for alert firing
   lastAlertStatus   AlertStatus        @default(NORMAL)

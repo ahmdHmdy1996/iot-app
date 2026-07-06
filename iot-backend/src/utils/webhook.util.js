@@ -157,6 +157,8 @@ export const sendCaterflowStatusWebhook = async (imei, online) => {
  * @param {number} readingData.humidity - Humidity value
  * @param {string} readingData.battery - Battery percentage string (e.g., "100%")
  * @param {string} readingData.timestamp - ISO timestamp of the reading
+ * @param {string} [readingData.alertStatus] - Current state for this reading:
+ *   "NORMAL" | "TEMPERATURE_HIGH" | "TEMPERATURE_LOW"
  */
 export const sendCaterflowReadingWebhook = async (readingData) => {
   const url = process.env.CATERFLOW_WEBHOOK_URL;
@@ -185,6 +187,7 @@ export const sendCaterflowReadingWebhook = async (readingData) => {
       humidity: readingData.humidity != null ? parseFloat(readingData.humidity) : 0,
       battery: batteryNum,
       timestamp: readingData.timestamp,
+      alertStatus: readingData.alertStatus || "NORMAL",
     }
   };
 

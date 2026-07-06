@@ -7,6 +7,10 @@ import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
 import { sendCaterflowWebhook, sendCaterflowReadingWebhook, sendCaterflowStatusWebhook } from "../utils/webhook.util.js";
 import { getIO } from "../socket.js";
 
+// Minimum temperature delta (°C) between the new reading and the last stored
+// one for it to be considered "different enough" to persist to history.
+const READING_CHANGE_THRESHOLD_C = 1.0;
+
 /**
  * TCP Server for WF501 IoT Devices
  * Handles device connections, data parsing, and ACK responses
@@ -227,10 +231,15 @@ class TCPServer {
           packetIndex: packet.packetIndex,
         });
 
-        // Fetch device with calibration, thresholds, and user (for webhookUrl)
+        // Fetch device with calibration, thresholds, user (for webhookUrl), and
+        // its most recent reading (used to decide whether this new value is
+        // "different enough" to be worth storing — see reading-thinning below).
         const device = await prisma.device.findUnique({
           where: { imei: packet.imei },
-          include: { user: true },
+          include: {
+            user: true,
+            readings: { orderBy: { timestamp: "desc" }, take: 1 },
+          },
         });
 
         if (!device) {
@@ -288,30 +297,69 @@ class TCPServer {
           }
         }
 
-        // Update device status: online, battery level, and alert states
+        // Update device status: online, battery level, alert states, and
+        // lastSeenAt (bumped on every valid packet regardless of whether a
+        // Reading row is stored below — this is what offlineChecker relies on,
+        // so thinning near-duplicate readings can never make a live device
+        // look stale/offline).
         await prisma.device.update({
           where: { imei: packet.imei },
           data: {
             isOffline: false,
+            lastSeenAt: new Date(),
             batteryLevel: batteryPct,
             lastAlertStatus: newTempState,
             lastBatteryStatus: newBatteryState,
           },
         });
 
-        // Save reading with calibrated temperature
-        const readingRecord = await prisma.reading.create({
-          data: {
+        // ── Reading storage thinning ──────────────────────────────────────────
+        // Only persist a new Reading row when the temperature differs from the
+        // last stored reading by at least READING_CHANGE_THRESHOLD_C (avoids
+        // filling history/charts with noise like 27.2 vs 27.3). The live
+        // dashboard, Socket.io broadcast, and CaterFlow webhook always use the
+        // current live value below regardless of this decision.
+        const lastReading = device.readings?.[0] ?? null;
+        const isSignificantChange =
+          !lastReading ||
+          Math.abs(finalTemperature - lastReading.temperature) >=
+            READING_CHANGE_THRESHOLD_C;
+
+        let readingRecord;
+        if (isSignificantChange) {
+          readingRecord = await prisma.reading.create({
+            data: {
+              deviceImei: packet.imei,
+              temperature: finalTemperature,
+              humidity: packet.humidityRh ?? undefined,
+              voltage: packet.batteryVolts ?? undefined,
+              packetIndex: packet.packetIndex ?? undefined,
+            },
+          });
+          console.log("[TCP] Reading saved to database");
+        } else {
+          // Not stored — synthesize the same shape so downstream consumers
+          // (Socket.io broadcast, CaterFlow webhook, generic webhookUrl) still
+          // get the current live value.
+          readingRecord = {
+            id: null,
             deviceImei: packet.imei,
             temperature: finalTemperature,
-            humidity: packet.humidityRh ?? undefined,
-            voltage: packet.batteryVolts ?? undefined,
-            packetIndex: packet.packetIndex ?? undefined,
-          },
-        });
-        console.log("[TCP] Reading saved to database");
+            humidity: packet.humidityRh ?? null,
+            voltage: packet.batteryVolts ?? null,
+            packetIndex: packet.packetIndex ?? null,
+            timestamp: new Date(),
+          };
+          console.log(
+            `[TCP] Reading skipped (Δ<${READING_CHANGE_THRESHOLD_C}°C) — not stored`,
+          );
+        }
 
         // ── Socket.io: broadcast live reading to TempFlow dashboard ─────────
+        // `alertStatus` reflects the CURRENT evaluated state for this exact
+        // packet (not just on transitions), so consumers can keep showing an
+        // ongoing HIGH/LOW state correctly on every reading instead of only
+        // reacting to the (much rarer) temperature_alert transition event.
         const socketPayload = {
           imei: device.imei,
           name: device.name ?? device.imei,
@@ -320,6 +368,7 @@ class TCPServer {
           battery: packet.batteryPercent != null ? `${packet.batteryPercent}%` : null,
           batteryLevel: packet.batteryPercent ?? null,
           voltage: packet.batteryVolts ?? null,
+          alertStatus: newTempState,
           timestamp: readingRecord.timestamp.toISOString(),
         };
         const io = getIO();
@@ -338,6 +387,7 @@ class TCPServer {
             humidity: packet.humidityRh,
             battery: `${packet.batteryPercent}%`,
             timestamp: readingRecord.timestamp.toISOString(),
+            alertStatus: newTempState,
           }).catch((err) => {
             console.warn("[TCP] CaterFlow reading webhook error:", err.message);
           });
@@ -373,8 +423,40 @@ class TCPServer {
             });
             createdAlerts.push(alert);
             console.log("[TCP] Alert created: TEMPERATURE_LOW");
+          } else if (
+            device.lastAlertStatus === "TEMPERATURE_HIGH" ||
+            device.lastAlertStatus === "TEMPERATURE_LOW"
+          ) {
+            // Recovered — notify once, and close out the open alert(s) so
+            // "unresolved alerts" counts (e.g. superAdmin dashboard) don't
+            // grow forever for a condition that's no longer true.
+            const recoveredFromHigh = device.lastAlertStatus === "TEMPERATURE_HIGH";
+            const message = recoveredFromHigh
+              ? `Temperature back to normal range (${finalTemperature}°C ≤ ${maxTemp}°C)`
+              : `Temperature back to normal range (${finalTemperature}°C ≥ ${minTemp}°C)`;
+
+            await prisma.alertLog.updateMany({
+              where: {
+                deviceImei: packet.imei,
+                alertType: device.lastAlertStatus,
+                resolved: false,
+              },
+              data: { resolved: true },
+            });
+
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "TEMPERATURE_NORMAL",
+                message,
+                resolved: true,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log(
+              `[TCP] Alert created: TEMPERATURE_NORMAL (recovered from ${device.lastAlertStatus})`,
+            );
           }
-          // NORMAL: state was reset – no alert needed, just status updated
         }
 
         // Battery: fire only when state changes and not NORMAL
@@ -413,12 +495,19 @@ class TCPServer {
         if (createdAlerts.length > 0 && device.user) {
           const deviceLabel = device.name || device.imei;
           const alertSummary = createdAlerts.map((a) => a.message).join("; ");
-          const alertMessage = `🚨 نظام التنبيهات | Alert for Device [${deviceLabel}]: Temperature reached ${finalTemperature}°C. ${alertSummary}`;
+          // Use a calmer prefix for pure recovery notifications so a "back to
+          // normal" message doesn't read like a new alarm.
+          const isOnlyRecovery = createdAlerts.every(
+            (a) => a.alertType === "TEMPERATURE_NORMAL",
+          );
+          const alertMessage = isOnlyRecovery
+            ? `✅ نظام التنبيهات | Device [${deviceLabel}] is back to normal: Temperature is ${finalTemperature}°C. ${alertSummary}`
+            : `🚨 نظام التنبيهات | Alert for Device [${deviceLabel}]: Temperature reached ${finalTemperature}°C. ${alertSummary}`;
 
           if (device.user.alertEmailEnabled && device.user.alertEmail) {
             sendEmailAlert(
               device.user.alertEmail,
-              `IoT Alert: ${deviceLabel}`,
+              isOnlyRecovery ? `IoT Recovered: ${deviceLabel}` : `IoT Alert: ${deviceLabel}`,
               alertMessage,
             ).catch((err) => {
               console.warn(
@@ -442,15 +531,28 @@ class TCPServer {
         // ── CaterFlow Integration (real-time webhook) ───────────────────────
         if (createdAlerts.length > 0 && device.source === "CATERFLOW") {
           createdAlerts.forEach((alert) => {
-            const threshold =
-              alert.alertType === "TEMPERATURE_HIGH"
-                ? device.maxTemp
-                : device.minTemp;
+            // Only temperature alerts map to a min/max threshold; battery
+            // alerts don't apply here (threshold stays undefined for those).
+            let threshold;
+            let wireAlertType = alert.alertType;
+            if (alert.alertType === "TEMPERATURE_HIGH") {
+              threshold = device.maxTemp;
+            } else if (alert.alertType === "TEMPERATURE_LOW") {
+              threshold = device.minTemp;
+            } else if (alert.alertType === "TEMPERATURE_NORMAL") {
+              // Recovery — CaterFlow's UI matches the exact string "NORMAL"
+              // (see lastAlertStatus default), not "TEMPERATURE_NORMAL".
+              wireAlertType = "NORMAL";
+              threshold =
+                device.lastAlertStatus === "TEMPERATURE_HIGH"
+                  ? device.maxTemp
+                  : device.minTemp;
+            }
 
             sendCaterflowWebhook({
               imei: device.imei,
               externalRefId: device.externalRefId,
-              alertType: alert.alertType,
+              alertType: wireAlertType,
               currentValue: finalTemperature,
               threshold: threshold,
               timestamp: alert.timestamp.toISOString(),

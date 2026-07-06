@@ -1,7 +1,14 @@
 /**
  * Automated Offline Checker job.
- * Runs every 5 minutes: finds active devices with no recent reading (15+ min),
- * marks them offline, creates OFFLINE AlertLog, and triggers email/WhatsApp per user preferences.
+ * Runs every 5 minutes: finds active devices with no valid packet received in
+ * 15+ minutes, marks them offline, creates OFFLINE AlertLog, and triggers
+ * email/WhatsApp per user preferences.
+ *
+ * Uses `device.lastSeenAt` rather than the most recent Reading row: reading
+ * storage is intentionally thinned (near-duplicate values aren't persisted),
+ * so a device can be alive and reporting on schedule with no NEW Reading row
+ * for a while — that must not look like an outage. `lastSeenAt` is bumped on
+ * every valid packet regardless of whether a Reading was stored.
  */
 import cron from "node-cron";
 import prisma from "../config/db.js";
@@ -17,15 +24,12 @@ async function runOfflineCheck() {
 
   const devices = await prisma.device.findMany({
     where: { isActive: true, isOffline: false },
-    include: {
-      user: true,
-      readings: { orderBy: { timestamp: "desc" }, take: 1 },
-    },
+    include: { user: true },
   });
 
   const toMarkOffline = devices.filter((d) => {
-    const lastReading = d.readings[0];
-    return !lastReading || lastReading.timestamp < cutoff;
+    const lastSeen = d.lastSeenAt ?? d.createdAt;
+    return lastSeen < cutoff;
   });
 
   for (const device of toMarkOffline) {
