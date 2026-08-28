@@ -15,7 +15,7 @@ async function getDeviceForUser(imei, userId) {
  */
 export async function addExternalDevice(
   userId,
-  { imei, name, minTemp, maxTemp, calibrationOffset },
+  { imei, name, minTemp, maxTemp, minHumidity, maxHumidity, calibrationOffset },
 ) {
   if (!imei || typeof imei !== "string" || !imei.trim()) {
     const err = new Error("IMEI is required");
@@ -48,6 +48,10 @@ export async function addExternalDevice(
         name: name != null && name !== "" ? String(name).trim() : null,
         minTemp: minTemp != null && minTemp !== "" ? Number(minTemp) : null,
         maxTemp: maxTemp != null && maxTemp !== "" ? Number(maxTemp) : null,
+        minHumidity:
+          minHumidity != null && minHumidity !== "" ? Number(minHumidity) : null,
+        maxHumidity:
+          maxHumidity != null && maxHumidity !== "" ? Number(maxHumidity) : null,
         calibrationOffset:
           calibrationOffset != null && calibrationOffset !== ""
             ? Number(calibrationOffset)
@@ -74,7 +78,7 @@ export async function addExternalDevice(
 export async function updateExternalDevice(
   userId,
   imei,
-  { name, minTemp, maxTemp, calibrationOffset, isActive },
+  { name, minTemp, maxTemp, minHumidity, maxHumidity, calibrationOffset, isActive },
 ) {
   const { device, notFound, forbidden } = await getDeviceForUser(imei, userId);
   if (notFound) {
@@ -95,6 +99,12 @@ export async function updateExternalDevice(
     data.minTemp = minTemp === null || minTemp === "" ? null : Number(minTemp);
   if (maxTemp !== undefined)
     data.maxTemp = maxTemp === null || maxTemp === "" ? null : Number(maxTemp);
+  if (minHumidity !== undefined)
+    data.minHumidity =
+      minHumidity === null || minHumidity === "" ? null : Number(minHumidity);
+  if (maxHumidity !== undefined)
+    data.maxHumidity =
+      maxHumidity === null || maxHumidity === "" ? null : Number(maxHumidity);
   if (calibrationOffset !== undefined)
     data.calibrationOffset =
       calibrationOffset === null || calibrationOffset === ""
@@ -220,6 +230,14 @@ export async function getDeviceHistory(userId, imei, limit = 100, from, to) {
     else if (device.minTemp != null && r.temperature < device.minTemp)
       alertStatus = "TEMPERATURE_LOW";
 
+    let humidityAlertStatus = "NORMAL";
+    if (r.humidity != null) {
+      if (device.maxHumidity != null && r.humidity > device.maxHumidity)
+        humidityAlertStatus = "HUMIDITY_HIGH";
+      else if (device.minHumidity != null && r.humidity < device.minHumidity)
+        humidityAlertStatus = "HUMIDITY_LOW";
+    }
+
     return {
       id: r.id,
       temperature: r.temperature,
@@ -228,6 +246,7 @@ export async function getDeviceHistory(userId, imei, limit = 100, from, to) {
       batteryLevel: device.batteryLevel ?? null,
       timestamp: r.timestamp,
       alertStatus,
+      humidityAlertStatus,
     };
   });
 
@@ -237,6 +256,8 @@ export async function getDeviceHistory(userId, imei, limit = 100, from, to) {
       name: device.name,
       minTemp: device.minTemp,
       maxTemp: device.maxTemp,
+      minHumidity: device.minHumidity,
+      maxHumidity: device.maxHumidity,
     },
     readings: annotated,
     total: annotated.length,

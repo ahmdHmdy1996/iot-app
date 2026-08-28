@@ -188,6 +188,7 @@ export const sendCaterflowReadingWebhook = async (readingData) => {
       battery: batteryNum,
       timestamp: readingData.timestamp,
       alertStatus: readingData.alertStatus || "NORMAL",
+      humidityAlertStatus: readingData.humidityAlertStatus || "NORMAL",
     }
   };
 

@@ -56,6 +56,8 @@ export async function getUserDevices(userId, query = {}) {
     isActive: d.isActive,
     minTemp: d.minTemp,
     maxTemp: d.maxTemp,
+    minHumidity: d.minHumidity,
+    maxHumidity: d.maxHumidity,
     calibrationOffset: d.calibrationOffset,
     batteryLevel: d.batteryLevel,
     isOffline: d.isOffline,
@@ -71,7 +73,18 @@ export async function getUserDevices(userId, query = {}) {
  */
 export async function addUserDevice(
   userId,
-  { imei, name, minTemp, maxTemp, calibrationOffset, source, externalRefId, caterflowRestaurantId },
+  {
+    imei,
+    name,
+    minTemp,
+    maxTemp,
+    minHumidity,
+    maxHumidity,
+    calibrationOffset,
+    source,
+    externalRefId,
+    caterflowRestaurantId,
+  },
 ) {
   if (!imei || typeof imei !== "string" || !imei.trim()) {
     const err = new Error("IMEI is required");
@@ -132,6 +145,10 @@ export async function addUserDevice(
         name: name != null && name !== "" ? String(name).trim() : null,
         minTemp: minTemp != null && minTemp !== "" ? Number(minTemp) : null,
         maxTemp: maxTemp != null && maxTemp !== "" ? Number(maxTemp) : null,
+        minHumidity:
+          minHumidity != null && minHumidity !== "" ? Number(minHumidity) : null,
+        maxHumidity:
+          maxHumidity != null && maxHumidity !== "" ? Number(maxHumidity) : null,
         calibrationOffset:
           calibrationOffset != null && calibrationOffset !== ""
             ? Number(calibrationOffset)
@@ -162,7 +179,7 @@ export async function addUserDevice(
 export async function updateUserDevice(
   userId,
   imei,
-  { name, minTemp, maxTemp, calibrationOffset, isActive },
+  { name, minTemp, maxTemp, minHumidity, maxHumidity, calibrationOffset, isActive },
 ) {
   const device = await prisma.device.findUnique({ where: { imei } });
   if (!device) {
@@ -183,6 +200,12 @@ export async function updateUserDevice(
     data.minTemp = minTemp === null || minTemp === "" ? null : Number(minTemp);
   if (maxTemp !== undefined)
     data.maxTemp = maxTemp === null || maxTemp === "" ? null : Number(maxTemp);
+  if (minHumidity !== undefined)
+    data.minHumidity =
+      minHumidity === null || minHumidity === "" ? null : Number(minHumidity);
+  if (maxHumidity !== undefined)
+    data.maxHumidity =
+      maxHumidity === null || maxHumidity === "" ? null : Number(maxHumidity);
   if (calibrationOffset !== undefined)
     data.calibrationOffset =
       calibrationOffset === null || calibrationOffset === ""
@@ -251,6 +274,8 @@ export async function createAdminDevice({
   name,
   minTemp,
   maxTemp,
+  minHumidity,
+  maxHumidity,
   calibrationOffset,
   userId,
 }) {
@@ -289,6 +314,10 @@ export async function createAdminDevice({
   if (userId != null && userId !== "") data.userId = Number(userId);
   if (minTemp != null && minTemp !== "") data.minTemp = Number(minTemp);
   if (maxTemp != null && maxTemp !== "") data.maxTemp = Number(maxTemp);
+  if (minHumidity != null && minHumidity !== "")
+    data.minHumidity = Number(minHumidity);
+  if (maxHumidity != null && maxHumidity !== "")
+    data.maxHumidity = Number(maxHumidity);
   if (calibrationOffset != null && calibrationOffset !== "")
     data.calibrationOffset = Number(calibrationOffset);
 
@@ -311,7 +340,7 @@ export async function createAdminDevice({
  */
 export async function updateAdminDevice(
   imei,
-  { name, minTemp, maxTemp, calibrationOffset, isActive },
+  { name, minTemp, maxTemp, minHumidity, maxHumidity, calibrationOffset, isActive },
 ) {
   const data = {};
   if (name !== undefined) data.name = name;
@@ -320,6 +349,12 @@ export async function updateAdminDevice(
     data.minTemp = minTemp === null || minTemp === "" ? null : Number(minTemp);
   if (maxTemp !== undefined)
     data.maxTemp = maxTemp === null || maxTemp === "" ? null : Number(maxTemp);
+  if (minHumidity !== undefined)
+    data.minHumidity =
+      minHumidity === null || minHumidity === "" ? null : Number(minHumidity);
+  if (maxHumidity !== undefined)
+    data.maxHumidity =
+      maxHumidity === null || maxHumidity === "" ? null : Number(maxHumidity);
   if (calibrationOffset !== undefined)
     data.calibrationOffset =
       calibrationOffset === null || calibrationOffset === ""
@@ -443,6 +478,8 @@ export async function getAllAdminDevicesList() {
     isActive: d.isActive,
     minTemp: d.minTemp,
     maxTemp: d.maxTemp,
+    minHumidity: d.minHumidity,
+    maxHumidity: d.maxHumidity,
     calibrationOffset: d.calibrationOffset,
     batteryLevel: d.batteryLevel,
     isOffline: d.isOffline,
@@ -484,11 +521,14 @@ export async function getCaterflowDevices() {
     isOffline:             d.isOffline,
     minTemp:               d.minTemp,
     maxTemp:               d.maxTemp,
+    minHumidity:           d.minHumidity,
+    maxHumidity:           d.maxHumidity,
     batteryLevel:          d.batteryLevel,
     source:                d.source,
     caterflowRestaurantId: d.caterflowRestaurantId ?? null,
     externalRefId:         d.externalRefId ?? null,
     lastAlertStatus:       d.lastAlertStatus,
+    lastHumidityStatus:    d.lastHumidityStatus,
     lastOnline:            d.readings[0]?.timestamp ?? null,
     latestTemp:            d.readings[0]?.temperature ?? null,
     latestHumidity:        d.readings[0]?.humidity ?? null,

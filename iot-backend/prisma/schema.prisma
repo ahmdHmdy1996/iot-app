@@ -19,7 +19,7 @@ enum SystemSource {
   CATERFLOW
 }
 
-// Type of alert for AlertLog (temperature bounds, offline, or battery)
+// Type of alert for AlertLog (temperature bounds, offline, battery, or humidity)
 enum AlertType {
   TEMPERATURE_HIGH
   TEMPERATURE_LOW
@@ -27,6 +27,9 @@ enum AlertType {
   OFFLINE
   BATTERY_LOW
   BATTERY_CRITICAL
+  HUMIDITY_HIGH
+  HUMIDITY_LOW
+  HUMIDITY_NORMAL // recovery: back inside range after HIGH/LOW
 }
 
 // Last known temperature alert state for a device (used for deduplication)
@@ -41,6 +44,15 @@ enum BatteryAlertStatus {
   NORMAL
   BATTERY_LOW
   BATTERY_CRITICAL
+}
+
+// Last known humidity alert state for a device (used for deduplication) —
+// kept separate from AlertStatus (temperature) the same way battery has its
+// own enum, since a device can be temperature-high and humidity-low at once.
+enum HumidityAlertStatus {
+  NORMAL
+  HUMIDITY_HIGH
+  HUMIDITY_LOW
 }
 
 model User {
@@ -87,6 +99,8 @@ model Device {
   // Alert thresholds (used to trigger alerts and validate readings)
   minTemp Float?
   maxTemp Float?
+  minHumidity Float?
+  maxHumidity Float?
 
   // Calibration: applied to raw sensor value (e.g. reading + calibrationOffset)
   calibrationOffset Float @default(0)
@@ -101,8 +115,9 @@ model Device {
   lastSeenAt DateTime?
 
   // Deduplication state for alert firing
-  lastAlertStatus   AlertStatus        @default(NORMAL)
-  lastBatteryStatus BatteryAlertStatus @default(NORMAL)
+  lastAlertStatus   AlertStatus         @default(NORMAL)
+  lastBatteryStatus BatteryAlertStatus  @default(NORMAL)
+  lastHumidityStatus HumidityAlertStatus @default(NORMAL)
 
   readings  Reading[]
   alertLogs AlertLog[]

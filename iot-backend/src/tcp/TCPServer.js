@@ -7,10 +7,6 @@ import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
 import { sendCaterflowWebhook, sendCaterflowReadingWebhook, sendCaterflowStatusWebhook } from "../utils/webhook.util.js";
 import { getIO } from "../socket.js";
 
-// Minimum temperature delta (°C) between the new reading and the last stored
-// one for it to be considered "different enough" to persist to history.
-const READING_CHANGE_THRESHOLD_C = 1.0;
-
 /**
  * TCP Server for WF501 IoT Devices
  * Handles device connections, data parsing, and ACK responses
@@ -231,14 +227,11 @@ class TCPServer {
           packetIndex: packet.packetIndex,
         });
 
-        // Fetch device with calibration, thresholds, user (for webhookUrl), and
-        // its most recent reading (used to decide whether this new value is
-        // "different enough" to be worth storing — see reading-thinning below).
+        // Fetch device with calibration, thresholds, and user (for webhookUrl).
         const device = await prisma.device.findUnique({
           where: { imei: packet.imei },
           include: {
             user: true,
-            readings: { orderBy: { timestamp: "desc" }, take: 1 },
           },
         });
 
@@ -285,6 +278,23 @@ class TCPServer {
           newTempState = "TEMPERATURE_LOW";
         }
 
+        // ── Humidity alert state ─────────────────────────────────────────────
+        // Kept as its own state, evaluated the same way as temperature but
+        // tracked separately (device.lastHumidityStatus, not lastAlertStatus)
+        // — a device can be temperature-high and humidity-low at once.
+        const minHumidity = device.minHumidity ?? null;
+        const maxHumidity = device.maxHumidity ?? null;
+        const finalHumidity = packet.humidityRh ?? null;
+
+        let newHumidityState = "NORMAL";
+        if (finalHumidity != null) {
+          if (maxHumidity != null && finalHumidity > maxHumidity) {
+            newHumidityState = "HUMIDITY_HIGH";
+          } else if (minHumidity != null && finalHumidity < minHumidity) {
+            newHumidityState = "HUMIDITY_LOW";
+          }
+        }
+
         // ── Battery alert state ──────────────────────────────────────────────
         const batteryPct =
           packet.batteryPercent != null ? Number(packet.batteryPercent) : null;
@@ -298,10 +308,7 @@ class TCPServer {
         }
 
         // Update device status: online, battery level, alert states, and
-        // lastSeenAt (bumped on every valid packet regardless of whether a
-        // Reading row is stored below — this is what offlineChecker relies on,
-        // so thinning near-duplicate readings can never make a live device
-        // look stale/offline).
+        // lastSeenAt (this is what offlineChecker relies on for staleness).
         await prisma.device.update({
           where: { imei: packet.imei },
           data: {
@@ -310,50 +317,22 @@ class TCPServer {
             batteryLevel: batteryPct,
             lastAlertStatus: newTempState,
             lastBatteryStatus: newBatteryState,
+            lastHumidityStatus: newHumidityState,
           },
         });
 
-        // ── Reading storage thinning ──────────────────────────────────────────
-        // Only persist a new Reading row when the temperature differs from the
-        // last stored reading by at least READING_CHANGE_THRESHOLD_C (avoids
-        // filling history/charts with noise like 27.2 vs 27.3). The live
-        // dashboard, Socket.io broadcast, and CaterFlow webhook always use the
-        // current live value below regardless of this decision.
-        const lastReading = device.readings?.[0] ?? null;
-        const isSignificantChange =
-          !lastReading ||
-          Math.abs(finalTemperature - lastReading.temperature) >=
-            READING_CHANGE_THRESHOLD_C;
-
-        let readingRecord;
-        if (isSignificantChange) {
-          readingRecord = await prisma.reading.create({
-            data: {
-              deviceImei: packet.imei,
-              temperature: finalTemperature,
-              humidity: packet.humidityRh ?? undefined,
-              voltage: packet.batteryVolts ?? undefined,
-              packetIndex: packet.packetIndex ?? undefined,
-            },
-          });
-          console.log("[TCP] Reading saved to database");
-        } else {
-          // Not stored — synthesize the same shape so downstream consumers
-          // (Socket.io broadcast, CaterFlow webhook, generic webhookUrl) still
-          // get the current live value.
-          readingRecord = {
-            id: null,
+        // Every reading is stored, regardless of how small the change is —
+        // only the alert/notification path below is deduped by state change.
+        const readingRecord = await prisma.reading.create({
+          data: {
             deviceImei: packet.imei,
             temperature: finalTemperature,
-            humidity: packet.humidityRh ?? null,
-            voltage: packet.batteryVolts ?? null,
-            packetIndex: packet.packetIndex ?? null,
-            timestamp: new Date(),
-          };
-          console.log(
-            `[TCP] Reading skipped (Δ<${READING_CHANGE_THRESHOLD_C}°C) — not stored`,
-          );
-        }
+            humidity: packet.humidityRh ?? undefined,
+            voltage: packet.batteryVolts ?? undefined,
+            packetIndex: packet.packetIndex ?? undefined,
+          },
+        });
+        console.log("[TCP] Reading saved to database");
 
         // ── Socket.io: broadcast live reading to TempFlow dashboard ─────────
         // `alertStatus` reflects the CURRENT evaluated state for this exact
@@ -369,6 +348,7 @@ class TCPServer {
           batteryLevel: packet.batteryPercent ?? null,
           voltage: packet.batteryVolts ?? null,
           alertStatus: newTempState,
+          humidityAlertStatus: newHumidityState,
           timestamp: readingRecord.timestamp.toISOString(),
         };
         const io = getIO();
@@ -388,6 +368,7 @@ class TCPServer {
             battery: `${packet.batteryPercent}%`,
             timestamp: readingRecord.timestamp.toISOString(),
             alertStatus: newTempState,
+            humidityAlertStatus: newHumidityState,
           }).catch((err) => {
             console.warn("[TCP] CaterFlow reading webhook error:", err.message);
           });
@@ -459,6 +440,68 @@ class TCPServer {
           }
         }
 
+        // Humidity: fire only when state changes (mirrors temperature above,
+        // tracked against device.lastHumidityStatus instead of lastAlertStatus
+        // so the two conditions don't clobber each other's dedup state).
+        if (newHumidityState !== device.lastHumidityStatus) {
+          if (newHumidityState === "HUMIDITY_HIGH") {
+            const message = `Humidity above maximum (${finalHumidity}% > ${maxHumidity}%)`;
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "HUMIDITY_HIGH",
+                message,
+                resolved: false,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log("[TCP] Alert created: HUMIDITY_HIGH");
+          } else if (newHumidityState === "HUMIDITY_LOW") {
+            const message = `Humidity below minimum (${finalHumidity}% < ${minHumidity}%)`;
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "HUMIDITY_LOW",
+                message,
+                resolved: false,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log("[TCP] Alert created: HUMIDITY_LOW");
+          } else if (
+            device.lastHumidityStatus === "HUMIDITY_HIGH" ||
+            device.lastHumidityStatus === "HUMIDITY_LOW"
+          ) {
+            // Recovered — same close-out-open-alerts treatment as temperature.
+            const recoveredFromHigh = device.lastHumidityStatus === "HUMIDITY_HIGH";
+            const message = recoveredFromHigh
+              ? `Humidity back to normal range (${finalHumidity}% ≤ ${maxHumidity}%)`
+              : `Humidity back to normal range (${finalHumidity}% ≥ ${minHumidity}%)`;
+
+            await prisma.alertLog.updateMany({
+              where: {
+                deviceImei: packet.imei,
+                alertType: device.lastHumidityStatus,
+                resolved: false,
+              },
+              data: { resolved: true },
+            });
+
+            const alert = await prisma.alertLog.create({
+              data: {
+                deviceImei: packet.imei,
+                alertType: "HUMIDITY_NORMAL",
+                message,
+                resolved: true,
+              },
+            });
+            createdAlerts.push(alert);
+            console.log(
+              `[TCP] Alert created: HUMIDITY_NORMAL (recovered from ${device.lastHumidityStatus})`,
+            );
+          }
+        }
+
         // Battery: fire only when state changes and not NORMAL
         if (
           newBatteryState !== device.lastBatteryStatus &&
@@ -498,11 +541,26 @@ class TCPServer {
           // Use a calmer prefix for pure recovery notifications so a "back to
           // normal" message doesn't read like a new alarm.
           const isOnlyRecovery = createdAlerts.every(
-            (a) => a.alertType === "TEMPERATURE_NORMAL",
+            (a) => a.alertType === "TEMPERATURE_NORMAL" || a.alertType === "HUMIDITY_NORMAL",
           );
+          // Lead with whichever reading actually triggered an alert — a
+          // pure-humidity event shouldn't be reported as a temperature
+          // reading, and vice versa.
+          const hasHumidityAlert = createdAlerts.some((a) =>
+            a.alertType.startsWith("HUMIDITY_"),
+          );
+          const hasTemperatureAlert = createdAlerts.some((a) =>
+            a.alertType.startsWith("TEMPERATURE_"),
+          );
+          const readingSummary = [
+            hasTemperatureAlert ? `Temperature is ${finalTemperature}°C` : null,
+            hasHumidityAlert ? `Humidity is ${finalHumidity}%` : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
           const alertMessage = isOnlyRecovery
-            ? `✅ نظام التنبيهات | Device [${deviceLabel}] is back to normal: Temperature is ${finalTemperature}°C. ${alertSummary}`
-            : `🚨 نظام التنبيهات | Alert for Device [${deviceLabel}]: Temperature reached ${finalTemperature}°C. ${alertSummary}`;
+            ? `✅ نظام التنبيهات | Device [${deviceLabel}] is back to normal: ${readingSummary}. ${alertSummary}`
+            : `🚨 نظام التنبيهات | Alert for Device [${deviceLabel}]: ${readingSummary}. ${alertSummary}`;
 
           if (device.user.alertEmailEnabled && device.user.alertEmail) {
             sendEmailAlert(
@@ -531,9 +589,14 @@ class TCPServer {
         // ── CaterFlow Integration (real-time webhook) ───────────────────────
         if (createdAlerts.length > 0 && device.source === "CATERFLOW") {
           createdAlerts.forEach((alert) => {
-            // Only temperature alerts map to a min/max threshold; battery
-            // alerts don't apply here (threshold stays undefined for those).
+            // Only temperature/humidity alerts map to a min/max threshold;
+            // battery alerts don't apply here (threshold stays undefined).
+            // CaterFlow's IotAlertDataDto requires threshold as a number, so
+            // every branch that can actually fire for a CATERFLOW-sourced
+            // device must resolve one — leaving it undefined here would make
+            // CaterFlow reject the webhook outright.
             let threshold;
+            let currentValue = finalTemperature;
             let wireAlertType = alert.alertType;
             if (alert.alertType === "TEMPERATURE_HIGH") {
               threshold = device.maxTemp;
@@ -547,13 +610,26 @@ class TCPServer {
                 device.lastAlertStatus === "TEMPERATURE_HIGH"
                   ? device.maxTemp
                   : device.minTemp;
+            } else if (alert.alertType === "HUMIDITY_HIGH") {
+              currentValue = finalHumidity;
+              threshold = device.maxHumidity;
+            } else if (alert.alertType === "HUMIDITY_LOW") {
+              currentValue = finalHumidity;
+              threshold = device.minHumidity;
+            } else if (alert.alertType === "HUMIDITY_NORMAL") {
+              currentValue = finalHumidity;
+              wireAlertType = "HUMIDITY_NORMAL";
+              threshold =
+                device.lastHumidityStatus === "HUMIDITY_HIGH"
+                  ? device.maxHumidity
+                  : device.minHumidity;
             }
 
             sendCaterflowWebhook({
               imei: device.imei,
               externalRefId: device.externalRefId,
               alertType: wireAlertType,
-              currentValue: finalTemperature,
+              currentValue: currentValue,
               threshold: threshold,
               timestamp: alert.timestamp.toISOString(),
             }).catch((err) => {
