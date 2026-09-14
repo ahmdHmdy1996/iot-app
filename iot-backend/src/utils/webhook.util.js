@@ -187,6 +187,10 @@ export const sendCaterflowReadingWebhook = async (readingData) => {
       humidity: readingData.humidity != null ? parseFloat(readingData.humidity) : 0,
       battery: batteryNum,
       timestamp: readingData.timestamp,
+      // When the device says it took the reading, as opposed to when the
+      // packet arrived. Null when the device's clock could not be trusted.
+      recordedAt: readingData.recordedAt ?? null,
+      clockTrusted: readingData.clockTrusted !== false,
       alertStatus: readingData.alertStatus || "NORMAL",
       humidityAlertStatus: readingData.humidityAlertStatus || "NORMAL",
     }

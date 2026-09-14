@@ -244,7 +244,12 @@ export async function getDeviceHistory(userId, imei, limit = 100, from, to) {
       humidity: r.humidity,
       voltage: r.voltage,
       batteryLevel: device.batteryLevel ?? null,
+      // Two times, deliberately. `timestamp` is when the packet reached the
+      // server; `recordedAt` is when the device says it took the reading.
+      // They differ by however long the device was offline buffering.
       timestamp: r.timestamp,
+      recordedAt: r.recordedAt ?? null,
+      clockTrusted: r.clockTrusted ?? true,
       alertStatus,
       humidityAlertStatus,
     };

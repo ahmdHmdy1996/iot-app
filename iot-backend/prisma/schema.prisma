@@ -131,7 +131,23 @@ model Reading {
   humidity    Float?
   voltage     Float?
   packetIndex Int?
+
+  /// When the packet reached this server. Every existing row means this, and
+  /// every query and index is built on it, so it keeps the name it had.
   timestamp   DateTime @default(now())
+
+  /// When the device itself says it took the reading, from the WF501 RTC
+  /// field. A device that loses connectivity buffers readings and sends them
+  /// in one burst, so this can be hours behind `timestamp` - the gap between
+  /// the two is what reveals the outage. Null for rows written before this
+  /// column existed, and for a device whose clock could not be trusted.
+  recordedAt  DateTime?
+
+  /// False when the device's RTC was too far from the arrival time to believe
+  /// - an RTC with no backup battery resets to its manufacturing date, and a
+  /// reading stamped in the year 2000 is worse than one stamped on arrival.
+  clockTrusted Boolean @default(true)
+
   deviceImei  String
 
   device Device @relation(fields: [deviceImei], references: [imei], onDelete: Cascade)

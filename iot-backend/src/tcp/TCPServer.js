@@ -6,6 +6,7 @@ import { sendWebhook } from "../utils/webhook.js";
 import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
 import { sendCaterflowWebhook, sendCaterflowReadingWebhook, sendCaterflowStatusWebhook } from "../utils/webhook.util.js";
 import { getIO } from "../socket.js";
+import { resolveReadingTime } from "../utils/deviceClock.js";
 
 /**
  * TCP Server for WF501 IoT Devices
@@ -323,6 +324,23 @@ class TCPServer {
 
         // Every reading is stored, regardless of how small the change is —
         // only the alert/notification path below is deduped by state change.
+        //
+        // The device's own clock is stored beside the arrival time rather than
+        // instead of it. A device that loses connectivity buffers its readings
+        // and uploads them in one burst; without this, a whole day of readings
+        // lands stacked on the few seconds the burst took to arrive.
+        const { recordedAt, clockTrusted } = resolveReadingTime(
+          packet.rtcUtc,
+          new Date(),
+        );
+        if (!clockTrusted) {
+          console.warn(
+            `[TCP] Untrusted device clock for ${packet.imei}: ` +
+              `RTC ${packet.rtcUtc ? packet.rtcUtc.toISOString() : "missing"} ` +
+              `— storing arrival time only`,
+          );
+        }
+
         const readingRecord = await prisma.reading.create({
           data: {
             deviceImei: packet.imei,
@@ -330,6 +348,8 @@ class TCPServer {
             humidity: packet.humidityRh ?? undefined,
             voltage: packet.batteryVolts ?? undefined,
             packetIndex: packet.packetIndex ?? undefined,
+            recordedAt,
+            clockTrusted,
           },
         });
         console.log("[TCP] Reading saved to database");
@@ -350,6 +370,8 @@ class TCPServer {
           alertStatus: newTempState,
           humidityAlertStatus: newHumidityState,
           timestamp: readingRecord.timestamp.toISOString(),
+          recordedAt: recordedAt ? recordedAt.toISOString() : null,
+          clockTrusted,
         };
         const io = getIO();
         if (io) {
@@ -367,6 +389,8 @@ class TCPServer {
             humidity: packet.humidityRh,
             battery: `${packet.batteryPercent}%`,
             timestamp: readingRecord.timestamp.toISOString(),
+            recordedAt: recordedAt ? recordedAt.toISOString() : null,
+            clockTrusted,
             alertStatus: newTempState,
             humidityAlertStatus: newHumidityState,
           }).catch((err) => {
