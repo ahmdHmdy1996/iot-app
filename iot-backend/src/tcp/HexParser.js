@@ -17,6 +17,8 @@
  * - Stop: 0x0D 0x0A
  */
 
+import { estimateBatteryPercent } from "../utils/batteryLevel.js";
+
 /**
  * CRC-16/MODBUS calculation
  * @param {Buffer} data - Data to calculate CRC for
@@ -90,43 +92,6 @@ function decodeHumidity(raw) {
   const rh = value * 0.1;
 
   return { sensorAbnormal, rh };
-}
-
-/**
- * Estimate battery percentage from voltage (Li-Ion)
- * @param {number} voltage - Battery voltage
- * @returns {number} Battery percentage 0-100
- */
-function estimateBatteryPercent(voltage) {
-  if (voltage <= 3.0) return 0;
-  if (voltage >= 4.2) return 100;
-
-  const table = [
-    { v: 3.0, p: 0 },
-    { v: 3.3, p: 5 },
-    { v: 3.45, p: 10 },
-    { v: 3.55, p: 20 },
-    { v: 3.65, p: 35 },
-    { v: 3.72, p: 50 },
-    { v: 3.78, p: 60 },
-    { v: 3.85, p: 75 },
-    { v: 3.92, p: 85 },
-    { v: 4.0, p: 92 },
-    { v: 4.1, p: 97 },
-    { v: 4.2, p: 100 },
-  ];
-
-  for (let i = 1; i < table.length; i++) {
-    if (voltage <= table[i].v) {
-      const v0 = table[i - 1].v;
-      const p0 = table[i - 1].p;
-      const v1 = table[i].v;
-      const p1 = table[i].p;
-      const t = (voltage - v0) / (v1 - v0);
-      return Math.max(0, Math.min(100, p0 + t * (p1 - p0)));
-    }
-  }
-  return 100;
 }
 
 /**
@@ -278,7 +243,7 @@ export function parseWf501Packet(frame) {
     batteryRaw = (payload[offset] << 8) | payload[offset + 1];
     offset += 2;
     batteryVolts = batteryRaw * 0.01;
-    batteryPercent = estimateBatteryPercent(batteryVolts);
+    batteryPercent = estimateBatteryPercent(batteryVolts) ?? 0;
 
     // Temperature
     const tempRaw = (payload[offset] << 8) | payload[offset + 1];

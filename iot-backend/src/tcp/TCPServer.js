@@ -7,6 +7,10 @@ import { sendEmailAlert, sendWhatsAppAlert } from "../utils/notifications.js";
 import { sendCaterflowWebhook, sendCaterflowReadingWebhook, sendCaterflowStatusWebhook } from "../utils/webhook.util.js";
 import { getIO } from "../socket.js";
 import { resolveReadingTime } from "../utils/deviceClock.js";
+import {
+  smoothedBatteryPercent,
+  SMOOTHING_WINDOW,
+} from "../utils/batteryLevel.js";
 
 /**
  * TCP Server for WF501 IoT Devices
@@ -223,7 +227,7 @@ class TCPServer {
           temperature: packet.temperatureC,
           humidity: packet.humidityRh,
           voltage: packet.batteryVolts,
-          battery: `${packet.batteryPercent}%`,
+          batteryRaw: `${packet.batteryPercent}%`,
           rtc: packet.rtcUtc.toISOString(),
           packetIndex: packet.packetIndex,
         });
@@ -296,9 +300,28 @@ class TCPServer {
           }
         }
 
+        // ── Battery level ────────────────────────────────────────────────────
+        // The percentage shown to people is taken across the last few samples
+        // rather than from this one packet. A single 10mV step is worth about
+        // 2% in the middle of the Li-Ion curve, so a battery quietly draining
+        // reads 48, 50, 52, 48 — and a customer reasonably reports that the
+        // reading is broken. The raw voltage below is stored untouched.
+        const recentVoltages = (
+          await prisma.reading.findMany({
+            where: { deviceImei: packet.imei, voltage: { not: null } },
+            orderBy: { timestamp: "desc" },
+            take: SMOOTHING_WINDOW - 1,
+            select: { voltage: true },
+          })
+        ).map((r) => r.voltage);
+
+        const batteryPct = smoothedBatteryPercent({
+          voltage: packet.batteryVolts,
+          recentVoltages,
+          previousPercent: device.batteryLevel,
+        });
+
         // ── Battery alert state ──────────────────────────────────────────────
-        const batteryPct =
-          packet.batteryPercent != null ? Number(packet.batteryPercent) : null;
         let newBatteryState = "NORMAL";
         if (batteryPct != null) {
           if (batteryPct < 10) {
@@ -315,7 +338,9 @@ class TCPServer {
           data: {
             isOffline: false,
             lastSeenAt: new Date(),
-            batteryLevel: batteryPct,
+            // A packet with no usable voltage says nothing about the battery,
+            // so the last known level is kept rather than blanked.
+            ...(batteryPct != null && { batteryLevel: batteryPct }),
             lastAlertStatus: newTempState,
             lastBatteryStatus: newBatteryState,
             lastHumidityStatus: newHumidityState,
@@ -364,8 +389,8 @@ class TCPServer {
           name: device.name ?? device.imei,
           temperature: finalTemperature,
           humidity: packet.humidityRh ?? null,
-          battery: packet.batteryPercent != null ? `${packet.batteryPercent}%` : null,
-          batteryLevel: packet.batteryPercent ?? null,
+          battery: batteryPct != null ? `${batteryPct}%` : null,
+          batteryLevel: batteryPct,
           voltage: packet.batteryVolts ?? null,
           alertStatus: newTempState,
           humidityAlertStatus: newHumidityState,
@@ -387,7 +412,7 @@ class TCPServer {
             externalRefId: device.externalRefId,
             temperature: finalTemperature,
             humidity: packet.humidityRh,
-            battery: `${packet.batteryPercent}%`,
+            battery: batteryPct != null ? `${batteryPct}%` : null,
             timestamp: readingRecord.timestamp.toISOString(),
             recordedAt: recordedAt ? recordedAt.toISOString() : null,
             clockTrusted,

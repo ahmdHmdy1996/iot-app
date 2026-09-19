@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node tests/send-test-packet.js",
+    "test": "node --test src/**/*.test.js",
+    "test:packet": "node tests/send-test-packet.js",
     "postinstall": "prisma generate"
   },
   "keywords": [
