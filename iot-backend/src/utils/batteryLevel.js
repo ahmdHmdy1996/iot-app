@@ -40,6 +40,17 @@ export const VOLTAGE_CURVE = [
 export const SMOOTHING_WINDOW = 5;
 
 /**
+ * How far back those samples may come from.
+ *
+ * A device normally reports once a minute, so five samples is five minutes and
+ * this changes nothing. A device that has slowed to one reading an hour is the
+ * case worth guarding: without a limit its window would span five hours and the
+ * card would show a battery level from this morning. Old samples are dropped
+ * instead, and a sparse reporter falls back toward its latest reading.
+ */
+export const SMOOTHING_WINDOW_MS = 15 * 60 * 1000;
+
+/**
  * How far the percentage must climb before a rise is believed.
  *
  * A device on a charger climbs past this within a few minutes and is reported

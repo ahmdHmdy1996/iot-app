@@ -10,6 +10,7 @@ import { resolveReadingTime } from "../utils/deviceClock.js";
 import {
   smoothedBatteryPercent,
   SMOOTHING_WINDOW,
+  SMOOTHING_WINDOW_MS,
 } from "../utils/batteryLevel.js";
 
 /**
@@ -308,7 +309,11 @@ class TCPServer {
         // reading is broken. The raw voltage below is stored untouched.
         const recentVoltages = (
           await prisma.reading.findMany({
-            where: { deviceImei: packet.imei, voltage: { not: null } },
+            where: {
+              deviceImei: packet.imei,
+              voltage: { not: null },
+              timestamp: { gte: new Date(Date.now() - SMOOTHING_WINDOW_MS) },
+            },
             orderBy: { timestamp: "desc" },
             take: SMOOTHING_WINDOW - 1,
             select: { voltage: true },

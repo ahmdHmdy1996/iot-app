@@ -92,7 +92,7 @@ describe('smoothedBatteryPercent', () => {
     assert.equal(shown, 60);
   });
 
-  it('shows a swapped battery straight away', () => {
+  it('reports a charged battery once the window agrees', () => {
     const shown = smoothedBatteryPercent({
       voltage: 4.15,
       recentVoltages: [4.15, 4.14],
@@ -130,5 +130,47 @@ describe('smoothedBatteryPercent', () => {
     });
 
     assert.equal(shown, 62);
+  });
+});
+
+describe('smoothedBatteryPercent, on a charger', () => {
+  /** What the card shows as fresh samples arrive, oldest window first. */
+  const replay = (samples, { start, previousPercent }) => {
+    const recent = [...start];
+    let shown = previousPercent;
+    return samples.map((v) => {
+      shown = smoothedBatteryPercent({
+        voltage: v,
+        recentVoltages: [...recent].reverse(),
+        previousPercent: shown,
+      });
+      recent.push(v);
+      if (recent.length > 8) recent.shift();
+      return shown;
+    });
+  };
+
+  it('catches up within a few readings of being plugged in', () => {
+    // The honest version of a battery swap: the window is still full of the
+    // flat readings from before, so the rise cannot be instant — but it must
+    // not take long either. A device reporting once a minute gets there in
+    // about three minutes.
+    const shown = replay([4.15, 4.15, 4.15, 4.15], {
+      start: [3.55, 3.55, 3.54, 3.54],
+      previousPercent: 19,
+    });
+
+    assert.equal(shown[0], 19);
+    assert.ok(shown[2] > 90, `expected a charged reading by the third, got ${shown[2]}`);
+  });
+
+  it('does not move on one high sample among flat ones', () => {
+    // A lone 4.15V among flat readings is noise, not a charger.
+    const shown = replay([4.15, 3.54, 3.55], {
+      start: [3.55, 3.55, 3.54, 3.54],
+      previousPercent: 19,
+    });
+
+    assert.deepEqual(shown, [19, 19, 19]);
   });
 });
