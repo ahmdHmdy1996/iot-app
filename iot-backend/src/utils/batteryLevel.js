@@ -31,9 +31,12 @@ export const VOLTAGE_CURVE = [
   { v: 3.78, p: 60 },
   { v: 3.85, p: 75 },
   { v: 3.92, p: 85 },
-  { v: 4.0, p: 92 },
-  { v: 4.1, p: 97 },
-  { v: 4.2, p: 100 },
+  { v: 4.0, p: 94 },
+  // Full is where the charger stops, not the textbook 4.2V. The WF501's
+  // charger holds the cell at 4.10V: a device left plugged in for days read
+  // 4.09-4.11 on nearly every packet, and the old top of this curve (4.2V =
+  // 100%) called that 97% - a full battery the owner was told was not full.
+  { v: 4.1, p: 100 },
 ];
 
 /** How many recent samples the displayed percentage is taken across. */
@@ -134,7 +137,10 @@ export function smoothedBatteryPercent({
   const last = asNumber(previousPercent);
   if (last === null) return candidate;
 
-  // Falls are taken as they come; only a rise has to prove itself.
+  // Falls are taken as they come; only a rise has to prove itself. Full is
+  // the exception: a battery showing 97% that reaches 100% rose by less than
+  // the deadband and would otherwise sit at 97% on the charger for good.
   if (candidate <= last) return candidate;
+  if (candidate >= 100) return 100;
   return candidate - last >= RISE_DEADBAND ? candidate : last;
 }

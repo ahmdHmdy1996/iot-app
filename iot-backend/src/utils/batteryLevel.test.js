@@ -19,6 +19,13 @@ describe('estimateBatteryPercent', () => {
     assert.equal(Math.round(estimateBatteryPercent(3.75)), 55);
   });
 
+  it('treats the charger holding voltage as full', () => {
+    // A WF501 on its charger sits at 4.10V. The old curve said 97%.
+    assert.equal(estimateBatteryPercent(4.1), 100);
+    assert.equal(estimateBatteryPercent(4.11), 100);
+    assert.ok(estimateBatteryPercent(4.09) >= 99);
+  });
+
   it('says nothing about a device that reports no voltage', () => {
     assert.equal(estimateBatteryPercent(null), null);
     assert.equal(estimateBatteryPercent(undefined), null);
@@ -111,6 +118,17 @@ describe('smoothedBatteryPercent', () => {
     });
 
     assert.equal(shown, 79);
+  });
+
+  it('reaches 100% on the charger even from just below it', () => {
+    // 97 -> 100 is a rise of 3, under the deadband; without the exception the
+    // card would read 97% on the charger for good.
+    const shown = smoothedBatteryPercent({
+      voltage: 4.1,
+      recentVoltages: [4.1, 4.11, 4.1, 4.1],
+      previousPercent: 97,
+    });
+    assert.equal(shown, 100);
   });
 
   it('says nothing when no voltage came through at all', () => {
